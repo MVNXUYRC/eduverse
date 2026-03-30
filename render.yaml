@@ -1,0 +1,16 @@
+# render.yaml — EduVerse deployment on Render
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: eduverse
+    runtime: node
+    plan: free
+    buildCommand: "echo 'No build step needed'"
+    startCommand: "node backend/server-standalone.js"
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
