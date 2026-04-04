@@ -10,7 +10,7 @@
 
 const ALLOWED_EMAILS = [
   // ── Administradores ──────────────────────────────────
-  "tu-email@gmail.com",          // Cambiar por tu email real
+  "joel_barrera@outlook.com",          // Cambiar por tu email real
 
   // ── Usuarios autorizados ─────────────────────────────
   // "estudiante1@gmail.com",
