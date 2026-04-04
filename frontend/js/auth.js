@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════
 // ⚠️  CONFIGURACIÓN — Reemplazar con tu Client ID real
 // ═══════════════════════════════════════════════════════
-const GOOGLE_CLIENT_ID = 'TU_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '907640588123-3lrkqp25cqu4k6sqdf55h6362pul3pvg.apps.googleusercontent.com';
 // ═══════════════════════════════════════════════════════
 
 const SESSION_KEY = 'eduverse_user';
