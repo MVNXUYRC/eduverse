@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Oferta académica oficial — Universidad Nacional de Misiones. Explorá carreras de grado, pregrado y posgrado." />
+  <title>Educación a Distancia</title>
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+  <div class="nav-overlay" id="nav-overlay"></div>
+
+  <!-- NAVBAR -->
+  <nav class="navbar" id="navbar" style="display:none">
+    <div class="nav-inner">
+
+      <!-- Logo -->
+      <a class="nav-logo" onclick="navigate('home')">
+        <img src="/public/logo-umv.png" alt="UNaM" />
+        <div class="nav-logo-text">
+          <span class="nav-logo-title">Universidad Nacional de Misiones</span>
+          <span class="nav-logo-sub">Educación a Distancia</span>
+        </div>
+      </a>
+
+      <!-- Links -->
+      <ul class="nav-links" id="nav-links">
+        <li><a class="nav-link" id="nav-home"     onclick="navigate('home')">Inicio</a></li>
+        <li><a class="nav-link" id="nav-search"   onclick="navigate('search')">Carreras</a></li>
+        <li><a class="nav-link" id="nav-campus"   href="https://ead.unam.edu.ar/" target="_blank">Campus Virtual</a></li>
+        <li><a class="nav-link" id="nav-quienes"  onclick="navigate('quienes')">Quiénes somos</a></li>
+        <li><a class="nav-link" id="nav-contacto" onclick="navigate('contacto')">Contacto</a></li>
+      </ul>
+
+      <!-- Right: user -->
+      <div class="nav-right">
+        <div id="nav-user-section"></div>
+        <button class="nav-hamburger" id="hamburger" aria-label="Menú">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+
+    </div>
+  </nav>
+
+  <!-- APP -->
+  <main id="app" style="display:none">
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;">
+      <div style="text-align:center;color:var(--text-muted);font-size:.9rem">Cargando...</div>
+    </div>
+  </main>
+
+  <!-- AUTH CONTAINER -->
+  <div id="auth-container"></div>
+
+  <!-- MODAL CONTAINER -->
+  <div id="modal-container"></div>
+
+  <!-- TOASTS -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

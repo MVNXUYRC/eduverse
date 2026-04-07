@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <meta name="robots" content="noindex,nofollow,noarchive"/>
+  <title>cPanel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet"/>
+  <style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --cy:#00A3E0;--cy2:#007db0;--gr:#3AAA35;--br:#7D4E24;--rd:#dc2626;--or:#d97706;
+  --bg:#f4f6f8;--sf:#fff;--ev:#eaf5fb;--bd:rgba(13,27,42,.08);
+  --tx:#0d1b2a;--tx2:#3d5166;--mt:#8fa3b1;
+  --fn:'Roboto',sans-serif;--sw:234px;--hh:54px;
+  --r:6px;--rmd:10px;--rlg:14px;--tr:.16s ease;
+}
+html,body{height:100%;font-family:var(--fn);background:var(--bg);color:var(--tx);font-size:14px}
+a{text-decoration:none;color:inherit}button{cursor:pointer;border:none;font-family:var(--fn)}
+input,select,textarea{font-family:var(--fn);font-size:14px}ul{list-style:none}
+#app{display:flex;height:100vh;overflow:hidden}
+.sb{width:var(--sw);background:#0d1b2a;display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+.sb-brand{padding:16px 14px 12px;border-bottom:1px solid rgba(255,255,255,.07)}
+.sb-bt{font-size:.8rem;font-weight:700;color:#fff}.sb-bs{font-size:.63rem;color:rgba(255,255,255,.3);margin-top:2px;text-transform:uppercase;letter-spacing:.06em}
+.sb-sec{padding:13px 14px 5px;font-size:.61rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.27)}
+.ni{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:.84rem;color:rgba(255,255,255,.58);cursor:pointer;border-radius:var(--r);margin:1px 7px;transition:all var(--tr)}
+.ni:hover{background:rgba(255,255,255,.06);color:#fff}.ni.active{background:var(--cy);color:#fff;font-weight:500}
+.sb-foot{margin-top:auto;padding:10px 12px;border-top:1px solid rgba(255,255,255,.07);position:relative}
+.sb-user{display:flex;align-items:center;gap:8px;cursor:pointer;border-radius:var(--r);padding:6px 8px;transition:background var(--tr)}.sb-user:hover{background:rgba(255,255,255,.06)}
+.sb-av{width:28px;height:28px;background:var(--cy);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;color:#fff;flex-shrink:0}
+.sb-ui{flex:1;min-width:0}.sb-un{font-size:.78rem;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-ur{font-size:.62rem;color:rgba(255,255,255,.37)}.sb-cv{color:rgba(255,255,255,.37);font-size:.7rem;transition:transform var(--tr)}.sb-cv.open{transform:rotate(180deg)}
+.udrop{position:absolute;bottom:calc(100% - 6px);left:7px;right:7px;background:#1a2d3e;border:1px solid rgba(255,255,255,.1);border-radius:var(--rmd);overflow:hidden;z-index:200;box-shadow:0 -8px 24px rgba(0,0,0,.3)}
+.udrop.hidden{display:none}
+.udd{display:flex;align-items:center;gap:8px;padding:9px 13px;font-size:.82rem;color:rgba(255,255,255,.68);cursor:pointer;transition:all var(--tr)}.udd:hover{background:rgba(255,255,255,.07);color:#fff}.udd.danger:hover{background:rgba(220,38,38,.15);color:#f87171}
+.udd-div{height:1px;background:rgba(255,255,255,.07);margin:3px 0}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:var(--hh);background:var(--sf);border-bottom:1px solid var(--bd);display:flex;align-items:center;padding:0 18px;gap:10px;flex-shrink:0}
+.tb-title{font-size:.92rem;font-weight:700;flex:1}
+.rbadge{font-size:.7rem;padding:3px 9px;border-radius:100px;font-weight:600;white-space:nowrap}
+.r-root{background:rgba(125,78,36,.1);color:var(--br)}.r-inst{background:rgba(0,163,224,.1);color:var(--cy)}.r-unit{background:rgba(58,170,53,.1);color:var(--gr)}
+.ct{flex:1;overflow-y:auto;padding:18px}
+.scr{min-height:100vh;display:none;align-items:center;justify-content:center;padding:20px;background:linear-gradient(135deg,#0d1b2a,#1a3a4a)}.scr.on{display:flex}
+.ac{background:var(--sf);border-radius:var(--rlg);padding:36px 32px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.ac-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;margin-bottom:18px;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.18);border-radius:100px;font-size:.68rem;font-weight:700;color:var(--rd);text-transform:uppercase;letter-spacing:.05em}
+.ac-title{font-size:1.2rem;font-weight:700;margin-bottom:5px}.ac-sub{font-size:.82rem;color:var(--tx2);margin-bottom:22px;line-height:1.5}
+.fg{margin-bottom:12px}.fl{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--tx2);margin-bottom:5px}
+.fi,.fs,.fta{width:100%;padding:10px 12px;background:var(--bg);border:1.5px solid var(--bd);border-radius:var(--r);font-size:.92rem;color:var(--tx);outline:none;transition:border-color var(--tr)}
+.fi:focus,.fs:focus,.fta:focus{border-color:var(--cy)}.fta{resize:vertical;min-height:70px}
+.fhint{font-size:.76rem;color:var(--mt);margin-top:4px}.ferr{font-size:.7rem;color:var(--rd);margin-top:3px}
+.pw{position:relative}.pw .fi{padding-right:40px}
+.eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--mt);font-size:.9rem;padding:4px;transition:color var(--tr)}.eye:hover{color:var(--cy)}
+.pstr{margin-top:6px;font-size:.7rem;display:flex;flex-direction:column;gap:2px}
+.pr{display:flex;align-items:center;gap:5px}.pr.ok{color:var(--gr)}.pr.fail{color:var(--mt)}
+.gp{background:var(--ev);border:1.5px solid rgba(0,163,224,.25);border-radius:var(--r);padding:12px 14px;margin-top:10px;display:none}
+.gp-lbl{font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--cy);margin-bottom:6px}
+.gp-row{display:flex;align-items:center;gap:8px}
+.gp-code{font-family:monospace;font-size:1rem;font-weight:700;color:var(--tx);letter-spacing:.08em;flex:1}
+.gp-eye{background:none;border:none;cursor:pointer;color:var(--mt);font-size:.9rem;padding:3px;transition:color var(--tr)}.gp-eye:hover{color:var(--cy)}
+.gp-copy{padding:5px 12px;background:var(--cy);color:#fff;border-radius:var(--r);font-size:.76rem;font-weight:600;transition:all var(--tr)}.gp-copy:hover{background:var(--cy2)}
+.gp-note{font-size:.71rem;color:var(--tx2);margin-top:8px;line-height:1.4}
+.btn{padding:8px 15px;border-radius:var(--r);font-size:.82rem;font-weight:600;transition:all var(--tr);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.btn-cy{background:var(--cy);color:#fff}.btn-cy:hover{background:var(--cy2)}
+.btn-ol{background:var(--bg);border:1px solid var(--bd);color:var(--tx2)}.btn-ol:hover{background:var(--ev)}
+.btn-ge{background:rgba(0,163,224,.08);color:var(--cy);border:1px solid rgba(0,163,224,.18)}.btn-ge:hover{background:var(--cy);color:#fff}
+.btn-rd{background:rgba(220,38,38,.07);color:var(--rd);border:1px solid rgba(220,38,38,.13)}.btn-rd:hover{background:var(--rd);color:#fff}
+.btn-sm{padding:5px 10px;font-size:.74rem}.btn-full{width:100%;justify-content:center;padding:11px}
+.btn-add{padding:5px 11px;background:rgba(58,170,53,.09);color:var(--gr);border:1px solid rgba(58,170,53,.2);border-radius:var(--r);font-size:.76rem;font-weight:600;cursor:pointer;transition:all var(--tr)}.btn-add:hover{background:var(--gr);color:#fff}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:11px;margin-bottom:18px}
+.sc{background:var(--sf);border:1px solid var(--bd);border-radius:var(--rmd);padding:14px 16px}
+.sv{font-size:1.7rem;font-weight:900;color:var(--cy)}.sl{font-size:.68rem;color:var(--mt);text-transform:uppercase;letter-spacing:.07em;margin-top:2px}
+.tb{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.sb2{display:flex;align-items:center;gap:6px;background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:7px 11px;flex:1;max-width:300px;font-size:.86rem}
+.sb2:focus-within{border-color:var(--cy)}.sb2 input{flex:1;background:none;border:none;outline:none;color:var(--tx)}
+.tr2{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.fsel{background:var(--sf);border:1px solid var(--bd);color:var(--tx);border-radius:var(--r);padding:7px 9px;font-size:.8rem;outline:none}.fsel:focus{border-color:var(--cy)}
+.tw{background:var(--sf);border:1px solid var(--bd);border-radius:var(--rmd);overflow:hidden}
+.tw table{width:100%;border-collapse:collapse}
+.tw th{background:var(--ev);padding:9px 12px;text-align:left;font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--mt);border-bottom:1px solid var(--bd);white-space:nowrap}
+.tw td{padding:10px 13px;border-bottom:1px solid var(--bd);font-size:.88rem;vertical-align:middle}
+.tw tr:last-child td{border-bottom:none}.tw tr:hover td{background:var(--ev)}
+.acts{display:flex;gap:5px}
+.bx{display:inline-flex;align-items:center;padding:2px 8px;border-radius:100px;font-size:.66rem;font-weight:700;white-space:nowrap}
+.bcy{background:rgba(0,163,224,.09);color:var(--cy);border:1px solid rgba(0,163,224,.18)}
+.bgr{background:rgba(58,170,53,.09);color:var(--gr);border:1px solid rgba(58,170,53,.18)}
+.bbr{background:rgba(125,78,36,.09);color:var(--br);border:1px solid rgba(125,78,36,.18)}
+.brd{background:rgba(220,38,38,.07);color:var(--rd);border:1px solid rgba(220,38,38,.13)}
+.bgy{background:rgba(143,163,177,.1);color:var(--mt);border:1px solid var(--bd)}
+.bor{background:rgba(217,119,6,.08);color:var(--or);border:1px solid rgba(217,119,6,.18)}
+.mbg{position:fixed;inset:0;background:rgba(13,27,42,.45);z-index:300;display:flex;align-items:center;justify-content:center;padding:14px}
+.modal{background:var(--sf);border-radius:var(--rlg);padding:22px;max-width:700px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.mhdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.mtitle{font-size:.97rem;font-weight:700}
+.mclose{width:26px;height:26px;background:var(--bg);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--mt);font-size:.9rem;transition:all var(--tr)}.mclose:hover{background:rgba(220,38,38,.1);color:var(--rd)}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px}.ff{grid-column:1/-1}
+.mact{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;padding-top:15px;border-top:1px solid var(--bd)}
+.msec{font-size:.69rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--cy);padding:10px 0 7px;border-bottom:1px solid rgba(0,163,224,.18);margin:14px 0 10px;grid-column:1/-1}
+/* Multi-select list for units */
+.units-list{border:1.5px solid var(--bd);border-radius:var(--r);overflow:hidden;max-height:190px;overflow-y:auto;background:var(--bg)}
+.units-list:focus-within{border-color:var(--cy)}
+.unit-item{display:flex;align-items:flex-start;gap:7px;padding:7px 10px;cursor:pointer;transition:background var(--tr);border-bottom:1px solid var(--bd);font-size:.83rem;line-height:1.3}
+.unit-item:last-child{border-bottom:none}.unit-item:hover{background:var(--ev)}
+.unit-item.sel{background:rgba(0,163,224,.07);color:var(--cy);font-weight:500}
+.unit-item input{accent-color:var(--cy);flex-shrink:0;margin-top:2px}
+/* Tags */
+.tw2{display:flex;flex-wrap:wrap;gap:4px;padding:6px 9px;background:var(--bg);border:1.5px solid var(--bd);border-radius:var(--r);min-height:36px;cursor:text}
+.tw2:focus-within{border-color:var(--cy)}
+.tc{display:flex;align-items:center;gap:3px;padding:2px 7px;background:rgba(0,163,224,.09);border:1px solid rgba(0,163,224,.18);border-radius:100px;font-size:.7rem;color:var(--cy);font-weight:600}
+.trm{cursor:pointer;font-size:.78rem}.trm:hover{color:var(--rd)}
+.tw2 input{border:none;background:none;outline:none;font-size:.82rem;color:var(--tx);min-width:70px;flex:1}
+/* File upload */
+.fup{border:1.5px dashed var(--bd);border-radius:var(--r);padding:10px 12px;text-align:center;cursor:pointer;transition:all var(--tr);background:var(--bg)}
+.fup:hover{border-color:var(--cy);background:var(--ev)}.fup input[type=file]{display:none}
+.fup-hint{font-size:.72rem;color:var(--mt)}.fup-name{font-size:.76rem;color:var(--cy);margin-top:4px;font-weight:500}
+.pdf-link{display:inline-flex;align-items:center;gap:5px;font-size:.76rem;color:var(--cy);font-weight:600;padding:4px 10px;background:rgba(0,163,224,.08);border:1px solid rgba(0,163,224,.18);border-radius:var(--r);transition:all var(--tr)}.pdf-link:hover{background:var(--cy);color:#fff}
+/* Documents */
+.doc-list{display:flex;flex-direction:column;gap:8px}
+.doc-item{background:var(--ev);border:1px solid rgba(0,163,224,.15);border-radius:var(--r);padding:10px 12px}
+.doc-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.doc-title{font-size:.78rem;font-weight:700;color:var(--cy)}
+.doc-grid{display:grid;grid-template-columns:1.5fr 1.5fr 1fr 1fr;gap:8px}
+/* Estados */
+.estado-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.estado-chk{display:flex;align-items:center;gap:6px;font-size:.83rem}
+.estado-chk input[type=checkbox]{accent-color:var(--cy);width:15px;height:15px}
+.estado-date{flex:1;min-width:140px}
+.estado-hint{font-size:.7rem;color:var(--mt);margin-top:3px}
+/* WYSIWYG toolbar */
+.wysiwyg-wrap{border:1.5px solid var(--bd);border-radius:var(--r);overflow:hidden;background:var(--sf)}
+.wysiwyg-wrap:focus-within{border-color:var(--cy)}
+.wysiwyg-bar{display:flex;gap:2px;padding:6px 8px;background:var(--ev);border-bottom:1px solid var(--bd);flex-wrap:wrap}
+.wb{padding:4px 8px;border-radius:4px;background:none;border:1px solid transparent;font-size:.8rem;cursor:pointer;color:var(--tx2);transition:all var(--tr)}.wb:hover{background:var(--sf);border-color:var(--bd)}.wb.active{background:var(--cy);color:#fff;border-color:var(--cy)}
+.wysiwyg-content{min-height:140px;padding:12px 14px;outline:none;font-size:.93rem;line-height:1.7;color:var(--tx);text-align:justify}
+.wysiwyg-content:empty::before{content:attr(data-placeholder);color:var(--mt)}
+/* Pagination */
+.pag{display:flex;align-items:center;gap:5px;margin-top:14px;justify-content:center}
+.pb{width:29px;height:29px;display:flex;align-items:center;justify-content:center;border-radius:var(--r);font-size:.78rem;font-weight:600;color:var(--tx2);background:var(--sf);border:1px solid var(--bd);cursor:pointer;transition:all var(--tr)}
+.pb:hover:not(:disabled){background:var(--ev)}.pb.active{background:var(--cy);border-color:var(--cy);color:#fff}.pb:disabled{opacity:.35;cursor:not-allowed}
+.empty{text-align:center;padding:36px;color:var(--mt)}.ei{font-size:1.8rem;margin-bottom:8px;opacity:.5}
+.alr{padding:9px 13px;border-radius:var(--r);font-size:.82rem;margin-bottom:14px;line-height:1.5}
+.alr-info{background:rgba(0,163,224,.07);border:1px solid rgba(0,163,224,.18);color:var(--cy2)}
+.alr-warn{background:rgba(217,119,6,.07);border:1px solid rgba(217,119,6,.18);color:#92400e}
+.tc2{position:fixed;bottom:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:6px}
+.toast{padding:10px 15px;background:var(--sf);border:1px solid var(--bd);border-radius:var(--rmd);font-size:.82rem;color:var(--tx);box-shadow:0 8px 24px rgba(0,0,0,.15);animation:ti .22s ease;max-width:280px}
+.toast.success{border-left:3px solid var(--gr)}.toast.error{border-left:3px solid var(--rd)}.toast.info{border-left:3px solid var(--cy)}
+@keyframes ti{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+.stlbl{display:inline-flex;align-items:center;gap:4px;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:100px}
+.st-on{background:rgba(58,170,53,.1);color:var(--gr);border:1px solid rgba(58,170,53,.2)}
+.st-off{background:rgba(143,163,177,.1);color:var(--mt);border:1px solid var(--bd)}
+.st-exp{background:rgba(217,119,6,.08);color:var(--or);border:1px solid rgba(217,119,6,.18)}
+@media(max-width:768px){.sb{display:none}.fgrid{grid-template-columns:1fr}.doc-grid{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+
+<div id="s-login" class="scr on">
+  <div class="ac">
+    <div class="ac-badge">Acceso restringido</div>
+    <h1 class="ac-title">Gestión Interna</h1>
+    <p class="ac-sub">Acceso exclusivo para personal autorizado de la UNaM.</p>
+    <div class="fg"><label class="fl">Correo institucional</label><input class="fi" type="email" id="le" placeholder="usuario@unam.edu.ar" autocomplete="email"/></div>
+    <div class="fg"><label class="fl">Contraseña</label><div class="pw"><input class="fi" type="password" id="lp" placeholder="••••••••" autocomplete="current-password"/><button class="eye" onclick="eye('lp',this)" tabindex="-1">👁</button></div></div>
+    <button class="btn btn-cy btn-full" id="lbtn" onclick="doLogin()">Ingresar</button>
+    <div class="ferr" id="lerr" style="text-align:center;margin-top:8px;min-height:16px"></div>
+  </div>
+</div>
+
+<div id="s-cp" class="scr">
+  <div class="ac">
+    <h1 class="ac-title">Cambiar contraseña</h1>
+    <p class="ac-sub">Debés establecer una nueva contraseña antes de continuar.</p>
+    <div class="fg"><label class="fl">Contraseña actual</label><div class="pw"><input class="fi" type="password" id="cp1"/><button class="eye" onclick="eye('cp1',this)" tabindex="-1">👁</button></div></div>
+    <div class="fg"><label class="fl">Nueva contraseña</label><div class="pw"><input class="fi" type="password" id="cp2" oninput="pstr(this.value,'ps1')"/><button class="eye" onclick="eye('cp2',this)" tabindex="-1">👁</button></div><div id="ps1" class="pstr"></div></div>
+    <div class="fg"><label class="fl">Confirmar</label><div class="pw"><input class="fi" type="password" id="cp3"/><button class="eye" onclick="eye('cp3',this)" tabindex="-1">👁</button></div></div>
+    <button class="btn btn-cy btn-full" onclick="submitCP()">Actualizar contraseña</button>
+    <div class="ferr" id="cpe" style="text-align:center;margin-top:8px;min-height:16px"></div>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+  <aside class="sb">
+    <div class="sb-brand"><div class="sb-bt">Universidad Nacional de Misiones</div><div class="sb-bs">Educación a Distancia</div></div>
+    <div class="sb-sec">Menú</div>
+    <div class="ni active" data-page="dash" onclick="nav('dash')">Dashboard</div>
+    <div class="ni" data-page="carr" onclick="nav('carr')">Propuestas Formativas</div>
+    <div class="ni" id="nav-usr" data-page="usr" onclick="nav('usr')" style="display:none">Usuarios</div>
+    <div class="ni" id="nav-cfg" data-page="cfg" onclick="nav('cfg')" style="display:none">Configuración</div>
+    <div class="ni" id="nav-log" data-page="log" onclick="nav('log')" style="display:none">Logs</div>
+    <div class="ni" id="nav-bkp" data-page="bkp" onclick="nav('bkp')" style="display:none">Backup</div>
+    <div class="sb-foot">
+      <div class="udrop hidden" id="udrop">
+        <div class="udd" onclick="openCPModal()">Cambiar contraseña</div>
+        <div class="udd-div"></div>
+        <div class="udd danger" onclick="logout()">Cerrar sesión</div>
+      </div>
+      <div class="sb-user" id="sbu" onclick="toggleUD()">
+        <div class="sb-av" id="sbav">U</div>
+        <div class="sb-ui"><div class="sb-un" id="sbn">—</div><div class="sb-ur" id="sbr">—</div></div>
+        <span class="sb-cv" id="sbcv">▲</span>
+      </div>
+    </div>
+  </aside>
+  <div class="main">
+    <div class="topbar"><div class="tb-title" id="tbt">Dashboard</div><span class="rbadge" id="tbr"></span></div>
+    <div class="ct" id="ct"></div>
+  </div>
+</div>
+<div id="mr"></div>
+<div class="tc2" id="tc"></div>
+
+<script>
+const BASE='/admin/api',TK='unam_atk',UK='unam_au';
+const RL={root:'root',institucional:'Administrador Institucional',unidades:'Administrador de Unidades'};
+const RC={root:'r-root',institucional:'r-inst',unidades:'r-unit'};
+const EAD='Educación a Distancia';
+const UNIDAD_REGIONAL={
+  'Facultad de Arte y Diseño':'Oberá',
+  'Facultad de Ciencias Económicas':'Posadas',
+  'Facultad de Ciencias Exactas, Químicas y Naturales':'Posadas',
+  'Facultad de Ciencias Forestales':'Eldorado',
+  'Facultad de Humanidades y Ciencias Sociales':'Posadas',
+  'Facultad de Ingeniería':'Oberá',
+  'Educación a Distancia':'',
+  'Escuela Agrotécnica Eldorado':'Eldorado',
+  'Escuela de Enfermería':'Posadas',
+};
+const REGIONALES=['Posadas','Oberá','Eldorado'];
+let me=null, cTags=[], cDis=[], cDocs=[], cfg={}, cp=1, cf={q:'',esCurso:'',activo:''}, uq='';
+
+// ── API ────────────────────────────────────────────────────
+async function api(ep,opts={}){
+  const tk=sessionStorage.getItem(TK);
+  const h={'Content-Type':'application/json',...(tk?{Authorization:`Bearer ${tk}`}:{})};
+  const res=await fetch(BASE+ep,{headers:h,...opts});
+  const d=await res.json();if(!res.ok)throw{status:res.status,message:d.error||'Error'};return d;
+}
+function apiMp(ep,method,fd,onProgress){
+  return new Promise((resolve,reject)=>{
+    const tk=sessionStorage.getItem(TK);
+    const xhr=new XMLHttpRequest();
+    xhr.open(method,BASE+ep);
+    if(tk)xhr.setRequestHeader('Authorization','Bearer '+tk);
+    if(onProgress){
+      xhr.upload.addEventListener('progress',e=>{
+        if(e.lengthComputable)onProgress(Math.round(e.loaded/e.total*100));
+      });
+    }
+    xhr.onload=()=>{
+      try{
+        const d=JSON.parse(xhr.responseText);
+        if(xhr.status>=200&&xhr.status<300)resolve(d);
+        else reject({status:xhr.status,message:d.error||'Error'});
+      }catch{reject({message:'Error de respuesta'});}
+    };
+    xhr.onerror=()=>reject({message:'Error de conexión'});
+    xhr.send(fd);
+  });
+}
+
+// ── STATE HELPERS ──────────────────────────────────────────
+function isActive(s){if(!s)return false;const v=s.valor!==undefined?s.valor:s.activo;if(!v)return false;if(!s.fechaHasta)return true;return new Date(s.fechaHasta)>new Date();}
+function stateLabel(s,on='Activo',off='Inactivo'){
+  if(!s)return`<span class="stlbl st-off">${off}</span>`;
+  const v=s.valor!==undefined?s.valor:s.activo;
+  if(!v)return`<span class="stlbl st-off">${off}</span>`;
+  if(s.fechaHasta){const exp=new Date(s.fechaHasta)<new Date();return exp?`<span class="stlbl st-exp">Venció ${fmtD(s.fechaHasta)}</span>`:`<span class="stlbl st-on">${on} hasta ${fmtD(s.fechaHasta)}</span>`;}
+  return`<span class="stlbl st-on">${on}</span>`;
+}
+function fmtD(iso){if(!iso)return'';return new Date(iso).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});}
+
+// ── AUTH ──────────────────────────────────────────────────
+async function doLogin(){
+  const email=document.getElementById('le').value.trim(),pass=document.getElementById('lp').value;
+  const err=document.getElementById('lerr');err.textContent='';
+  if(!email||!pass){err.textContent='Completá todos los campos.';return;}
+  const btn=document.getElementById('lbtn');btn.textContent='Ingresando…';btn.disabled=true;
+  try{
+    const d=await api('/auth/login',{method:'POST',body:JSON.stringify({email,password:pass})});
+    sessionStorage.setItem(TK,d.token);
+    const md=await api('/auth/me');me=md.user;sessionStorage.setItem(UK,JSON.stringify(me));
+    if(d.mustChangePassword){showScr('s-cp');document.getElementById('cp1').value=pass;}
+    else await initApp();
+  }catch(e){err.textContent=e.message||'Error';btn.textContent='Ingresar';btn.disabled=false;}
+}
+async function submitCP(){
+  const c=document.getElementById('cp1').value,n=document.getElementById('cp2').value,c2=document.getElementById('cp3').value;
+  const err=document.getElementById('cpe');err.textContent='';
+  if(!c||!n||!c2){err.textContent='Completá todos los campos.';return;}
+  if(n!==c2){err.textContent='Las contraseñas no coinciden.';return;}
+  try{await api('/auth/change-password',{method:'POST',body:JSON.stringify({currentPassword:c,newPassword:n})});toast('Contraseña actualizada. Iniciá sesión nuevamente.','success');setTimeout(()=>{sessionStorage.removeItem(TK);sessionStorage.removeItem(UK);me=null;showScr('s-login');},1600);}
+  catch(e){err.textContent=e.message;}
+}
+function openCPModal(){
+  toggleUD(false);
+  showModal(`<div class="mhdr"><h2 class="mtitle">Cambiar contraseña</h2><div class="mclose" onclick="cm()">✕</div></div>
+    <div class="fg"><label class="fl">Contraseña actual</label><div class="pw"><input class="fi" type="password" id="mp1"/><button class="eye" onclick="eye('mp1',this)" tabindex="-1">👁</button></div></div>
+    <div class="fg"><label class="fl">Nueva contraseña</label><div class="pw"><input class="fi" type="password" id="mp2" oninput="pstr(this.value,'ps2')"/><button class="eye" onclick="eye('mp2',this)" tabindex="-1">👁</button></div><div id="ps2" class="pstr"></div></div>
+    <div class="fg"><label class="fl">Confirmar</label><div class="pw"><input class="fi" type="password" id="mp3"/><button class="eye" onclick="eye('mp3',this)" tabindex="-1">👁</button></div></div>
+    <div class="mact"><button class="btn btn-ol" onclick="cm()">Cancelar</button><button class="btn btn-cy" onclick="doMCP()">Actualizar</button></div>`);
+}
+async function doMCP(){
+  const c=document.getElementById('mp1')?.value,n=document.getElementById('mp2')?.value,c2=document.getElementById('mp3')?.value;
+  if(!c||!n||!c2){toast('Completá todos los campos','error');return;}
+  if(n!==c2){toast('Las contraseñas no coinciden','error');return;}
+  try{await api('/auth/change-password',{method:'POST',body:JSON.stringify({currentPassword:c,newPassword:n})});toast('Contraseña actualizada','success');cm();}catch(e){toast(e.message,'error');}
+}
+function logout(){sessionStorage.removeItem(TK);sessionStorage.removeItem(UK);me=null;showScr('s-login');document.getElementById('le').value='';document.getElementById('lp').value='';document.getElementById('lerr').textContent='';}
+
+// ── UI ─────────────────────────────────────────────────────
+function showScr(id){['s-login','s-cp'].forEach(s=>{const el=document.getElementById(s);if(el)el.classList.toggle('on',s===id);});document.getElementById('app').style.display='none';}
+async function initApp(){
+  try{cfg=await api('/config');}catch{}
+  showApp();
+}
+function showApp(){
+  document.getElementById('s-login').classList.remove('on');document.getElementById('s-cp').classList.remove('on');
+  document.getElementById('app').style.display='flex';
+  document.getElementById('sbav').textContent=(me.nombre||'U')[0].toUpperCase();
+  document.getElementById('sbn').textContent=`${me.nombre} ${me.apellido}`;
+  document.getElementById('sbr').textContent=RL[me.rol]||me.rol;
+  const rb=document.getElementById('tbr');rb.textContent=RL[me.rol]||me.rol;rb.className=`rbadge ${RC[me.rol]||''}`;
+  if(me.rol==='root'||me.rol==='institucional')document.getElementById('nav-usr').style.display='flex';
+  if(me.rol==='root'){
+    document.getElementById('nav-cfg').style.display='flex';
+    document.getElementById('nav-log').style.display='flex';
+    document.getElementById('nav-bkp').style.display='flex';
+  }
+  nav('dash');
+}
+function toggleUD(f){const d=document.getElementById('udrop'),c=document.getElementById('sbcv');const s=f!==undefined?f:d.classList.contains('hidden');d.classList.toggle('hidden',!s);c.classList.toggle('open',s);}
+document.addEventListener('click',e=>{if(!e.target.closest('.sb-foot'))toggleUD(false);});
+function nav(page){cp=1;cf={q:'',esCurso:'',activo:''};uq='';
+  document.querySelectorAll('.ni').forEach(i=>i.classList.remove('active'));
+  const n=document.querySelector(`[data-page="${page}"]`);if(n)n.classList.add('active');
+  const titles={dash:'Dashboard',carr:'Propuestas Formativas',usr:'Usuarios',cfg:'Configuración del Sistema',log:'Logs',bkp:'Backup'};
+  document.getElementById('tbt').textContent=titles[page]||page;
+  document.getElementById('ct').innerHTML='<div class="empty"><div class="ei">⏳</div></div>';
+  if(page==='dash')rdash();if(page==='carr')rcarr();if(page==='usr')rusr();if(page==='cfg')rcfg();if(page==='log')rlog();if(page==='bkp')rbkp();
+}
+function eye(id,btn){const i=document.getElementById(id);if(!i)return;i.type=i.type==='password'?'text':'password';btn.textContent=i.type==='password'?'👁':'🙈';}
+function pstr(val,tid){const el=document.getElementById(tid);if(!el)return;const reqs=[{l:'Mínimo 8 caracteres',ok:val.length>=8},{l:'Mayúscula',ok:/[A-Z]/.test(val)},{l:'Minúscula',ok:/[a-z]/.test(val)},{l:'Número',ok:/[0-9]/.test(val)},{l:'Carácter especial',ok:/[^A-Za-z0-9]/.test(val)}];el.innerHTML=reqs.map(r=>`<div class="pr ${r.ok?'ok':'fail'}">${r.ok?'✓':'○'} ${r.l}</div>`).join('');}
+function showModal(html){document.getElementById('mr').innerHTML=`<div class="mbg" onclick="bgc(event)"><div class="modal">${html}</div></div>`;}
+function cm(){document.getElementById('mr').innerHTML='';}
+function bgc(e){if(e.target.classList.contains('mbg'))cm();}
+function toast(msg,type='info'){const c=document.getElementById('tc');const t=document.createElement('div');t.className=`toast ${type}`;t.textContent=msg;c.appendChild(t);setTimeout(()=>t.remove(),3400);}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+// ── DASHBOARD ─────────────────────────────────────────────
+async function rdash(){
+  const ct=document.getElementById('ct');
+  try{
+    const[cd,ud]=await Promise.all([api('/carreras?limit=200'),me.rol!=='unidades'?api('/usuarios'):Promise.resolve({data:[]})]);
+    const rows=cd.data||[],users=ud.data||[];
+    const act=rows.filter(c=>isActive(c.activo)).length;
+    ct.innerHTML=`<div class="stats">
+      <div class="sc"><div class="sv">${rows.length}</div><div class="sl">Total propuestas</div></div>
+      <div class="sc"><div class="sv">${act}</div><div class="sl">Activas</div></div>
+      <div class="sc"><div class="sv">${rows.length-act}</div><div class="sl">Finalizadas</div></div>
+      <div class="sc"><div class="sv">${rows.filter(c=>c.esCurso).length}</div><div class="sl">Cursos</div></div>
+      ${me.rol!=='unidades'?`<div class="sc"><div class="sv">${users.length}</div><div class="sl">Usuarios</div></div>`:''}
+    </div>
+    ${me.rol==='unidades'?`<div class="alr alr-info">Unidades asignadas: <strong>${(me.unidades||[]).join(', ')}</strong></div>`:''}
+    ${rows.length===0?`<div class="empty"><div class="ei">📭</div><p>Sin propuestas cargadas. Usá "Carreras y Cursos" para agregar la primera.</p></div>`:`
+    <div class="tw"><table>
+      <thead><tr><th>Denominación</th><th>Tipo</th><th>Unidad/es</th><th>Visible</th><th>Inscripción</th></tr></thead>
+      <tbody>${rows.slice(0,10).map(c=>`<tr>
+        <td style="font-weight:600">${esc(c.nombre)}</td>
+        <td>${c.esCurso?'<span class="bx bcy">Curso</span>':'<span class="bx bgy">'+esc(c.tipo||'Carrera')+'</span>'}</td>
+        <td style="font-size:.76rem;color:var(--mt)">${esc((c.unidadesAcademicas||[c.unidadAcademica]).join(', '))}</td>
+        <td>${stateLabel(c.activo,'Visible','Oculta')}</td>
+        <td>${stateLabel(c.inscripcionAbierta,'Abierta','Cerrada')}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`}`;
+  }catch(e){ct.innerHTML=`<div class="empty"><div class="ei">⚠️</div><p>${e.message}</p></div>`;}
+}
+
+// ── CARRERAS ──────────────────────────────────────────────
+async function rcarr(){
+  document.getElementById('ct').innerHTML=`
+    <div class="tb">
+      <div class="sb2">🔍 <input type="text" id="cs" placeholder="Buscar…" value="${esc(cf.q)}"/></div>
+      <div class="tr2">
+        <select class="fsel" id="cec"><option value="">Todos</option><option value="false" ${cf.esCurso==='false'?'selected':''}>Carreras</option><option value="true" ${cf.esCurso==='true'?'selected':''}>Cursos</option></select>
+        <select class="fsel" id="ca2"><option value="">Todos</option><option value="true" ${cf.activo==='true'?'selected':''}>Activas</option><option value="false" ${cf.activo==='false'?'selected':''}>Finalizadas</option></select>
+        <button class="btn btn-cy" onclick="openCarrForm(null)">+ Nueva</button>
+      </div>
+    </div>
+    <div id="ctb"></div><div id="cpg"></div>`;
+  const b=()=>{cf.q=document.getElementById('cs').value;cf.esCurso=document.getElementById('cec').value;cf.activo=document.getElementById('ca2').value;cp=1;lcarr();};
+  document.getElementById('cs').addEventListener('input',b);
+  document.getElementById('cec').addEventListener('change',b);
+  document.getElementById('ca2').addEventListener('change',b);
+  lcarr();
+}
+async function lcarr(){
+  const q=new URLSearchParams({limit:15,page:cp,q:cf.q,esCurso:cf.esCurso,activo:cf.activo});
+  try{
+    const{data:rows,meta}=await api(`/carreras?${q}`);
+    document.getElementById('ctb').innerHTML=rows.length?`
+      <div class="tw"><table>
+        <thead><tr><th>Nombre</th><th>Tipo</th><th>Unidad/es</th><th>Regional</th><th>Visible</th><th>Inscripción</th><th></th></tr></thead>
+        <tbody>${rows.map(c=>`<tr>
+          <td style="font-weight:600;max-width:180px">${esc(c.nombre)}</td>
+          <td>${c.esCurso?'<span class="bx bcy">Curso</span>':'<span class="bx bgy">Carrera</span>'}</td>
+          <td style="font-size:.74rem;color:var(--mt);max-width:160px">${esc((c.unidadesAcademicas||[c.unidadAcademica]).join(', '))}</td>
+          <td>${esc(c.regional)}</td>
+          <td>${stateLabel(c.activo,'Visible','Propuesta finalizada')}</td>
+          <td>${stateLabel(c.inscripcionAbierta,'Abierta','Cerrada')}</td>
+          <td><div class="acts" style="gap:4px">
+            <button title="Editar" class="btn btn-ge btn-sm" style="padding:5px 8px" onclick="openCarrForm(${c.id})">✏️</button>
+            ${isActive(c.activo)
+              ? `<button title="Desactivar propuesta" class="btn btn-sm" style="padding:5px 8px;background:rgba(217,119,6,.08);color:var(--or);border:1px solid rgba(217,119,6,.2)" onclick="toggleActivarCarr(${c.id},'${esc(c.nombre)}',false)">🔒</button>`
+              : `<button title="Activar propuesta" class="btn btn-sm" style="padding:5px 8px;background:rgba(58,170,53,.08);color:var(--gr);border:1px solid rgba(58,170,53,.2)" onclick="toggleActivarCarr(${c.id},'${esc(c.nombre)}',true)">🔓</button>`
+            }
+            ${me.rol==='root'?`<button title="Eliminar definitivamente" class="btn btn-rd btn-sm" style="padding:5px 8px" onclick="eliminarCarr(${c.id},'${esc(c.nombre)}')">🗑️</button>`:''}
+          </div></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`:'<div class="empty"><div class="ei">📭</div><p>Sin resultados</p></div>';
+    const pg=document.getElementById('cpg');
+    if(meta.totalPages>1){let b='';for(let i=1;i<=meta.totalPages;i++)b+=`<button class="pb ${i===meta.page?'active':''}" onclick="cp=${i};lcarr()">${i}</button>`;pg.innerHTML=`<div class="pag"><button class="pb" onclick="cp=${meta.page-1};lcarr()" ${meta.page===1?'disabled':''}>←</button>${b}<button class="pb" onclick="cp=${meta.page+1};lcarr()" ${meta.page===meta.totalPages?'disabled':''}>→</button></div>`;}else pg.innerHTML='';
+  }catch(e){toast(e.message,'error');}
+}
+
+// ── CARRERA FORM ──────────────────────────────────────────
+async function openCarrForm(id){
+  let c=null;
+  if(id){try{const d=await api(`/carreras?limit=200`);c=(d.data||[]).find(x=>x.id===id);}catch{}}
+  cTags=[...(c?.tags||[])];
+  cDis=[...(c?.disertantes||[])];
+  cDocs=(c?.documentos||[]).map((d,i)=>({...d,_i:i}));
+  const isCurso=c?.esCurso||false;
+  const selUnidades=c?.unidadesAcademicas||(c?.unidadAcademica?[c.unidadAcademica]:[]);
+  const availUnits=me.rol==='unidades'?(me.unidades||[]):(cfg.unidadesAcademicas||[]);
+  const tiposDoc=cfg.tiposDocumento||['Resolución','Disposición','Ordenanza'];
+  const organismos=cfg.organismos||['Consejo Superior','Ministerial','SPU','SSPU','CONEAU'];
+  const disciplinas=cfg.disciplinas||[];
+
+  const unidadList=availUnits.map(u=>`<label class="unit-item${selUnidades.includes(u)?' sel':''}" onclick="toggleUnitSel(this)">
+    <input type="checkbox" name="fc-u" value="${esc(u)}" ${selUnidades.includes(u)?'checked':''}/>
+    ${esc(u)}${u===EAD?'<span class="bx bcy" style="margin-left:auto;font-size:.6rem">Solo cursos</span>':''}
+  </label>`).join('');
+
+  const stField=(lbl,s,vId,dId)=>`<div class="fg ff">
+    <label class="fl">${lbl}</label>
+    <div class="estado-row">
+      <div class="estado-chk"><input type="checkbox" id="${vId}" ${(vId==='fc-act-v'?(s?.valor!==undefined?s?.valor:s?.activo!==undefined?s?.activo:true):s?.valor||s?.activo)?'checked':''}/><label for="${vId}" style="font-size:.83rem">Activar</label></div>
+      <div class="estado-date"><input class="fi" type="date" id="${dId}" value="${s?.fechaHasta?s.fechaHasta.slice(0,10):''}" min="${new Date().toISOString().slice(0,10)}"/></div>
+    </div>
+    <div class="estado-hint">Sin fecha → indefinido · Con fecha → se desactiva automáticamente</div>
+  </div>`;
+
+  showModal(`
+    <div class="mhdr"><h2 class="mtitle">${id?'Editar':'Nueva'} propuesta</h2><div class="mclose" onclick="cm()">✕</div></div>
+    <div class="fgrid">
+      <div class="fg ff"><label class="fl">Denominación *</label><input class="fi" id="fc-n" value="${esc(c?.nombre||'')}" oninput="autoNivel(this.value)"/></div>
+
+      <div class="fg">
+        <label class="fl">Tipo *</label>
+        <div id="fc-tipo-wrap" style="display:flex;gap:12px;padding:9px 11px;background:var(--bg);border:1.5px solid var(--bd);border-radius:var(--r)">
+          <label style="display:flex;align-items:center;gap:6px;font-size:.84rem;cursor:pointer">
+            <input type="radio" name="fc-tipo" value="false" ${!isCurso?'checked':''} style="accent-color:var(--cy)" onchange="onTipoCh()"/> Carrera
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:.84rem;cursor:pointer">
+            <input type="radio" name="fc-tipo" value="true" ${isCurso?'checked':''} style="accent-color:var(--cy)" onchange="onTipoCh()"/> Curso
+          </label>
+        </div>
+        <div class="fhint" id="fc-ead-hint" style="${selUnidades.includes(EAD)?'color:var(--cy);font-weight:500':'display:none'}">Unidad "Educación a Distancia" seleccionada → solo Curso</div>
+      </div>
+
+      <div class="fg" id="fc-nivel-grp" style="${isCurso?'display:none':''}">
+        <label class="fl">Nivel académico *</label>
+        <select class="fs" id="fc-nivel" onchange="onNivelCh()">
+          <option value="">Seleccionar</option>
+          <option value="Pregrado" ${c?.tipo==='Pregrado'?'selected':''}>Pregrado</option>
+          <option value="Grado" ${c?.tipo==='Grado'?'selected':''}>Grado</option>
+          <option value="Posgrado" ${c?.tipo==='Posgrado'?'selected':''}>Posgrado</option>
+        </select>
+      </div>
+      <div class="fg" id="fc-subtipo-grp" style="${c?.tipo==='Posgrado'?'':'display:none'}">
+        <label class="fl">Subtipo de posgrado</label>
+        <select class="fs" id="fc-subtipo">
+          <option value="">Sin subtipo</option>
+          <option value="Especialización" ${c?.subtipo==='Especialización'?'selected':''}>Especialización</option>
+          <option value="Maestría" ${c?.subtipo==='Maestría'?'selected':''}>Maestría</option>
+          <option value="Doctorado" ${c?.subtipo==='Doctorado'?'selected':''}>Doctorado</option>
+        </select>
+      </div>
+
+      <input type="hidden" id="fc-reg" value="${selUnidades[0]?UNIDAD_REGIONAL[selUnidades[0]]||'':(c?.regional||'')}"/>
+
+      <div class="fg ff">
+        <label class="fl">Unidades académicas * <span style="font-size:.7rem;color:var(--mt);font-weight:400">(multi-selección — interinstitucional)</span></label>
+        <div class="units-list" id="fc-units">${unidadList}</div>
+        <div class="fhint">Seleccioná una o más. Si incluís Educación a Distancia, el tipo se fuerza a Curso.</div>
+      </div>
+
+      <div class="fg"><label class="fl">Disciplina</label>
+        <input class="fi" id="fc-disc" list="disc-list" value="${esc(c?.disciplina||'')}"/>
+        <datalist id="disc-list">${disciplinas.map(d=>`<option>${d}</option>`).join('')}</datalist>
+      </div>
+      <div class="fg"><label class="fl">Modalidad</label>
+        <select class="fs" id="fc-mod">${['Híbrida','100% Virtual'].map(m=>`<option ${c?.modalidad===m?'selected':''}>${m}</option>`).join('')}</select>
+      </div>
+      <div class="fg"><label class="fl">Duración *</label><input class="fi" id="fc-dur" value="${esc(c?.duracion||'')}" placeholder="Ej: 3 años / 6 meses / 120 horas" required/><div class="fhint">Texto libre</div></div>
+      <div class="fg"><label class="fl">Correo de contacto</label><input class="fi" type="email" id="fc-cont" value="${esc(c?.contacto||'')}" placeholder="secretaria@unam.edu.ar"/></div>
+      <div class="fg"><label class="fl">Teléfono de contacto</label><input class="fi" type="text" id="fc-tel-cont" value="${esc(c?.telefonoContacto||'')}" placeholder="+54 3764 123456 int. 102"/><div class="fhint">Permite formatos con internos</div></div>
+
+      <div class="fg ff">
+        <label class="fl">Descripción</label>
+        <div class="wysiwyg-wrap">
+          <div class="wysiwyg-bar">
+            <button type="button" class="wb" onclick="wf2('bold','fc-desc-ed')"><b>N</b></button>
+            <button type="button" class="wb" onclick="wf2('italic','fc-desc-ed')"><i>I</i></button>
+            <button type="button" class="wb" onclick="wf2('underline','fc-desc-ed')"><u>S</u></button>
+            <span style="width:1px;background:var(--bd);margin:0 3px;align-self:stretch"></span>
+            <button type="button" class="wb" onclick="wf2('insertUnorderedList','fc-desc-ed')" title="Viñetas">≡</button>
+            <button type="button" class="wb" onclick="wf2('insertOrderedList','fc-desc-ed')" title="Numeración">1.</button>
+            <span style="width:1px;background:var(--bd);margin:0 3px;align-self:stretch"></span>
+            <button type="button" class="wb" onclick="wfLink('fc-desc-ed')">🔗 Hipervínculo</button>
+            <button type="button" class="wb" onclick="wf2('unlink','fc-desc-ed')">Quitar</button>
+          </div>
+          <div class="wysiwyg-content" id="fc-desc-ed" contenteditable="true" data-placeholder="Descripción de la propuesta…">${c?.descripcion||''}</div>
+        </div>
+      </div>
+      <div class="fg ff">
+        <label class="fl">Requisitos de admisión</label>
+        <div class="wysiwyg-wrap">
+          <div class="wysiwyg-bar">
+            <button type="button" class="wb" onclick="wf2('bold','fc-req-ed')"><b>N</b></button>
+            <button type="button" class="wb" onclick="wf2('italic','fc-req-ed')"><i>I</i></button>
+            <button type="button" class="wb" onclick="wf2('underline','fc-req-ed')"><u>S</u></button>
+            <span style="width:1px;background:var(--bd);margin:0 3px;align-self:stretch"></span>
+            <button type="button" class="wb" onclick="wf2('insertUnorderedList','fc-req-ed')" title="Viñetas">≡</button>
+            <button type="button" class="wb" onclick="wf2('insertOrderedList','fc-req-ed')" title="Numeración">1.</button>
+            <span style="width:1px;background:var(--bd);margin:0 3px;align-self:stretch"></span>
+            <button type="button" class="wb" onclick="wfLink('fc-req-ed')">🔗 Hipervínculo</button>
+            <button type="button" class="wb" onclick="wf2('unlink','fc-req-ed')">Quitar</button>
+          </div>
+          <div class="wysiwyg-content" id="fc-req-ed" contenteditable="true" data-placeholder="Requisitos de admisión…">${c?.requisitosTexto||''}</div>
+        </div>
+      </div>
+
+      <div class="fg ff">
+        <label class="fl">Palabras clave — Enter para agregar</label>
+        <div class="tw2" id="fc-tags">${cTags.map(t=>`<span class="tc">${esc(t)}<span class="trm" onclick="rmT('${esc(t)}','tags')">✕</span></span>`).join('')}<input type="text" placeholder="Agregar…" onkeydown="addT(event,'tags')"/></div>
+      </div>
+
+      <div class="fg ff" id="fc-dis-grp" style="${isCurso?'':'display:none'}">
+        <label class="fl">Disertantes — Enter para agregar</label>
+        <div class="tw2" id="fc-dis">${cDis.map(d=>`<span class="tc">${esc(d)}<span class="trm" onclick="rmT('${esc(d)}','dis')">✕</span></span>`).join('')}<input type="text" placeholder="Agregar disertante…" onkeydown="addT(event,'dis')"/></div>
+      </div>
+
+      <div class="fg ff" id="fc-form-grp" style="${isCurso?'':'display:none'}">
+        <label class="fl">Formulario de inscripción (URL, opcional)</label>
+        <input class="fi" type="url" id="fc-form" value="${esc(c?.formularioInscripcion||'')}" placeholder="https://…"/>
+      </div>
+
+      <div class="msec">Plan de estudios / Programa</div>
+
+      <div class="fg ff" id="fc-plan-grp" style="${!isCurso?'':'display:none'}">
+        <label class="fl">Plan de estudios (PDF)</label>
+        ${c?.planEstudiosPDF?`<div style="margin-bottom:6px"><a class="pdf-link" href="${c.planEstudiosPDF}" target="_blank">Ver PDF actual</a></div>`:''}
+        <div class="fup" onclick="document.getElementById('fc-plan').click()">
+          <input type="file" id="fc-plan" accept="application/pdf" onchange="fnm(this,'fc-plan-n')"/>
+          <div class="fup-hint">Clic para seleccionar PDF</div><div class="fup-name" id="fc-plan-n"></div>
+        </div>
+      </div>
+
+      <div class="fg ff" id="fc-prog-grp" style="${isCurso?'':'display:none'}">
+        <label class="fl">Programa (editor de texto)</label>
+        <div class="wysiwyg-wrap">
+          <div class="wysiwyg-bar">
+            <button type="button" class="wb" onclick="wf('bold')"><b>N</b></button>
+            <button type="button" class="wb" onclick="wf('italic')"><i>I</i></button>
+            <button type="button" class="wb" onclick="wf('underline')"><u>S</u></button>
+            <span style="width:1px;background:var(--bd);margin:0 3px;align-self:stretch"></span>
+            <button type="button" class="wb" onclick="wf('insertUnorderedList')" title="Viñetas">≡</button>
+            <button type="button" class="wb" onclick="wf('insertOrderedList')" title="Numeración">1.</button>
+            <span style="width:1px;background:var(--bd);margin:0 3px;align-self:stretch"></span>
+            <button type="button" class="wb" onclick="wfLinkProg()">🔗 Hipervínculo</button>
+            <button type="button" class="wb" onclick="wf('unlink')">Quitar</button>
+          </div>
+          <div class="wysiwyg-content" id="fc-prog" contenteditable="true" data-placeholder="Escribí el programa del curso…">${c?.programa||''}</div>
+        </div>
+      </div>
+
+      <div class="msec">Documentos administrativos</div>
+
+      <div class="fg ff">
+        <div class="doc-list" id="doc-list">
+          ${cDocs.map((d,i)=>docRow(d,i,tiposDoc,organismos)).join('')}
+        </div>
+        <button type="button" class="btn-add" style="margin-top:8px" onclick="addDoc()">+ Agregar documento</button>
+      </div>
+
+      <div class="msec">Estados</div>
+
+      ${stField('Inscripción abierta',c?.inscripcionAbierta,'fc-ia-v','fc-ia-d')}
+      ${stField('Visible / Activa',c?.activo,'fc-act-v','fc-act-d')}
+
+      <div class="fg" style="display:flex;align-items:center;gap:7px">
+        <input type="checkbox" id="fc-nv" ${c?.nueva?'checked':''} style="accent-color:var(--cy);width:14px;height:14px"/>
+        <label class="fl" style="margin:0;text-transform:none;font-size:.83rem">Marcar como nueva propuesta</label>
+      </div>
+    </div>
+    <div class="mact">
+      <button class="btn btn-ol" onclick="cm()">Cancelar</button>
+      <button class="btn btn-cy" id="carr-save-btn" onclick="saveCarr(${id||'null'})">Guardar</button>
+    </div>`);
+
+  // Init WYSIWYG paste stripping + activo->inscripcion logic
+  setTimeout(()=>{
+    initWysiwygPaste('fc-desc-ed');
+    initWysiwygPaste('fc-req-ed');
+    initWysiwygPaste('fc-prog');
+    // When activo is unchecked, also uncheck inscripcionAbierta
+    const activoCb=document.getElementById('fc-act-v');
+    const inscCb=document.getElementById('fc-ia-v');
+    if(activoCb&&inscCb){
+      activoCb.addEventListener('change',()=>{
+        if(!activoCb.checked){
+          inscCb.checked=false;
+          const inscDate=document.getElementById('fc-ia-d');
+          if(inscDate)inscDate.value='';
+        }
+      });
+    }
+  },100);
+}
+
+function docRow(d,i,tipos,orgs){
+  return`<div class="doc-item" id="doc-item-${i}">
+    <div class="doc-hdr"><span class="doc-title">Documento ${i+1}</span><button type="button" class="btn btn-rd btn-sm" onclick="rmDoc(${i})">Quitar</button></div>
+    <div class="doc-grid">
+      <div class="fg" style="margin:0"><label class="fl">Tipo</label><select class="fs" id="doc-tipo-${i}">${tipos.map(t=>`<option ${d.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="fg" style="margin:0"><label class="fl">Organismo</label><select class="fs" id="doc-org-${i}">${orgs.map(o=>`<option ${d.organismo===o?'selected':''}>${o}</option>`).join('')}</select></div>
+      <div class="fg" style="margin:0"><label class="fl">Número</label><input class="fi" id="doc-num-${i}" value="${esc(d.numero||'')}"/></div>
+      <div class="fg" style="margin:0"><label class="fl">Año</label><input class="fi" id="doc-anio-${i}" value="${esc(d.anio||'')}" maxlength="4" placeholder="2024"/></div>
+    </div>
+    <div class="fg" style="margin-top:8px">
+      <label class="fl">Archivo PDF</label>
+      ${d.pdf?`<div style="margin-bottom:5px"><a class="pdf-link" href="${d.pdf}" target="_blank">Ver PDF actual</a></div>`:''}
+      <div class="fup" onclick="document.getElementById('doc-pdf-${i}').click()">
+        <input type="file" id="doc-pdf-${i}" accept="application/pdf" onchange="fnm(this,'doc-pdf-n-${i}')"/>
+        <div class="fup-hint">Seleccionar PDF</div><div class="fup-name" id="doc-pdf-n-${i}"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function wf(cmd,val){document.execCommand(cmd,false,val||null);document.getElementById('fc-prog')?.focus();}
+function wf2(cmd,targetId,val){document.getElementById(targetId)?.focus();document.execCommand(cmd,false,val||null);}
+// Saved selection & target for hyperlink modal
+let _wfLinkTarget=null, _wfLinkRange=null;
+function wfLink(targetId){
+  const sel=window.getSelection();
+  _wfLinkRange=sel&&sel.rangeCount>0?sel.getRangeAt(0).cloneRange():null;
+  _wfLinkTarget=targetId;
+  // Show inline URL input overlay
+  const existing=document.getElementById('link-overlay');
+  if(existing)existing.remove();
+  const ov=document.createElement('div');
+  ov.id='link-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(13,27,42,.35);z-index:9999;display:flex;align-items:center;justify-content:center';
+  ov.innerHTML=`<div style="background:var(--sf);border-radius:var(--rmd);padding:22px 24px;min-width:360px;box-shadow:0 12px 40px rgba(0,0,0,.2)">
+    <div style="font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mt);margin-bottom:10px">Insertar hipervínculo</div>
+    <input id="link-url-inp" class="fi" type="url" placeholder="https://ejemplo.com" style="margin-bottom:12px" value="https://"/>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ol" onclick="document.getElementById('link-overlay').remove()">Cancelar</button>
+      <button class="btn btn-cy" onclick="applyLink()">Insertar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#link-url-inp').focus();
+  ov.querySelector('#link-url-inp').select();
+  ov.querySelector('#link-url-inp').addEventListener('keydown',e=>{if(e.key==='Enter')applyLink();if(e.key==='Escape')ov.remove();});
+}
+function wfLinkProg(){ wfLink('fc-prog'); }
+function applyLink(){
+  const url=document.getElementById('link-url-inp')?.value?.trim();
+  document.getElementById('link-overlay')?.remove();
+  if(!url||url==='https://')return;
+  const el=document.getElementById(_wfLinkTarget);if(!el)return;
+  el.focus();
+  const sel=window.getSelection();
+  if(_wfLinkRange&&sel){sel.removeAllRanges();sel.addRange(_wfLinkRange);}
+  document.execCommand('createLink',false,url);
+  el.querySelectorAll('a').forEach(a=>{a.target='_blank';a.rel='noopener';a.style.color='var(--cy)';a.style.textDecoration='underline';});
+  _wfLinkTarget=null;_wfLinkRange=null;
+}
+// Strip formatting on paste — only keep bold/italic/underline/links
+function initWysiwygPaste(id){
+  const el=document.getElementById(id);if(!el)return;
+  el.addEventListener('paste',e=>{
+    e.preventDefault();
+    const text=e.clipboardData.getData('text/plain');
+    document.execCommand('insertText',false,text);
+  });
+}
+// Auto-detect nivel from denominación
+const NIVEL_MAP=[
+  {prefix:'Tecnicatura',tipo:'Pregrado',subtipo:''},
+  {prefix:'Especialización',tipo:'Posgrado',subtipo:'Especialización'},
+  {prefix:'Maestría',tipo:'Posgrado',subtipo:'Maestría'},
+  {prefix:'Doctorado',tipo:'Posgrado',subtipo:'Doctorado'},
+  {prefix:'Licenciatura',tipo:'Grado',subtipo:''},
+  {prefix:'Profesorado',tipo:'Grado',subtipo:''},
+  {prefix:'Ingeniería',tipo:'Grado',subtipo:''},
+];
+function autoNivel(val){
+  const v=val.trim();
+  const match=NIVEL_MAP.find(m=>v.toLowerCase().startsWith(m.prefix.toLowerCase()));
+  if(!match)return;
+  const nivel=document.getElementById('fc-nivel');
+  const subtipo=document.getElementById('fc-subtipo');
+  const subGrp=document.getElementById('fc-subtipo-grp');
+  if(nivel&&nivel.value===''){nivel.value=match.tipo;}
+  if(subtipo&&subGrp&&match.subtipo&&subtipo.value===''){
+    subtipo.value=match.subtipo;
+    subGrp.style.display='';
+  }else if(subGrp&&!match.subtipo){
+    subGrp.style.display='none';
+  }
+}
+
+function onNivelCh(){
+  const nivel=document.getElementById('fc-nivel')?.value;
+  const sg=document.getElementById('fc-subtipo-grp');
+  if(sg) sg.style.display=nivel==='Posgrado'?'':'none';
+  if(nivel!=='Posgrado'){const ss=document.getElementById('fc-subtipo');if(ss)ss.value='';}
+}
+function onTipoCh(){
+  const isCurso=document.querySelector('input[name="fc-tipo"]:checked')?.value==='true';
+  document.getElementById('fc-dis-grp').style.display=isCurso?'':'none';
+  document.getElementById('fc-form-grp').style.display=isCurso?'':'none';
+  document.getElementById('fc-plan-grp').style.display=isCurso?'none':'';
+  document.getElementById('fc-prog-grp').style.display=isCurso?'':'none';
+}
+
+function toggleUnitSel(el){
+  el.classList.toggle('sel');
+  el.querySelector('input').checked=el.classList.contains('sel');
+  const selU=[...document.querySelectorAll('input[name="fc-u"]:checked')].map(i=>i.value);
+  // EaD check
+  const hasEad=selU.includes(EAD);
+  const hint=document.getElementById('fc-ead-hint');
+  if(hint)hint.style.display=hasEad?'':'none';
+  if(hasEad){document.querySelectorAll('input[name="fc-tipo"]').forEach(r=>r.checked=r.value==='true');onTipoCh();}
+  // Update hidden regional input from first selected unit
+  const primary=selU[0]||'';
+  const regional=UNIDAD_REGIONAL[primary]??'';
+  const inp=document.getElementById('fc-reg');
+  if(inp)inp.value=regional;
+}
+
+function addDoc(){
+  const tipos=cfg.tiposDocumento||['Resolución','Disposición','Ordenanza'];
+  const orgs=cfg.organismos||['Consejo Superior','Ministerial','SPU','SSPU','CONEAU'];
+  const i=cDocs.length;
+  cDocs.push({tipo:tipos[0],organismo:orgs[0],numero:'',anio:'',pdf:null,_i:i});
+  const list=document.getElementById('doc-list');
+  if(list){const tmp=document.createElement('div');tmp.innerHTML=docRow(cDocs[i],i,tipos,orgs);list.appendChild(tmp.firstElementChild);}
+}
+
+function rmDoc(i){
+  cDocs.splice(i,1);
+  const tipos=cfg.tiposDocumento||['Resolución','Disposición','Ordenanza'];
+  const orgs=cfg.organismos||['Consejo Superior','Ministerial','SPU','SSPU','CONEAU'];
+  const list=document.getElementById('doc-list');
+  if(!list)return;
+  list.innerHTML=cDocs.map((d,idx)=>docRow(d,idx,tipos,orgs)).join('');
+}
+
+function fnm(inp,nid){const el=document.getElementById(nid);if(el&&inp.files[0])el.textContent=inp.files[0].name;}
+function addT(e,type){if(e.key==='Enter'||e.key===','){e.preventDefault();const v=e.target.value.trim().toLowerCase();if(!v)return;e.target.value='';if(type==='tags'&&!cTags.includes(v)){cTags.push(v);rtags();}else if(type==='dis'&&!cDis.includes(v)){cDis.push(v);rdis();}}}
+function rmT(v,type){if(type==='tags'){cTags=cTags.filter(t=>t!==v);rtags();}else{cDis=cDis.filter(d=>d!==v);rdis();}}
+function rtags(){const w=document.getElementById('fc-tags');if(!w)return;w.innerHTML=cTags.map(t=>`<span class="tc">${esc(t)}<span class="trm" onclick="rmT('${esc(t)}','tags')">✕</span></span>`).join('');const ni=Object.assign(document.createElement('input'),{type:'text',placeholder:'Agregar…'});ni.addEventListener('keydown',e=>addT(e,'tags'));w.appendChild(ni);ni.focus();}
+function rdis(){const w=document.getElementById('fc-dis');if(!w)return;w.innerHTML=cDis.map(d=>`<span class="tc">${esc(d)}<span class="trm" onclick="rmT('${esc(d)}','dis')">✕</span></span>`).join('');const ni=Object.assign(document.createElement('input'),{type:'text',placeholder:'Agregar disertante…'});ni.addEventListener('keydown',e=>addT(e,'dis'));w.appendChild(ni);ni.focus();}
+
+async function saveCarr(id){
+  const nombre=document.getElementById('fc-n')?.value?.trim();
+  const isCurso=document.querySelector('input[name="fc-tipo"]:checked')?.value==='true';
+  const regional=document.getElementById('fc-reg')?.value||'';
+  const unidades=[...document.querySelectorAll('input[name="fc-u"]:checked')].map(i=>i.value);
+
+  const duracion=document.getElementById('fc-dur')?.value?.trim();
+  if(!nombre){toast('Nombre obligatorio','error');return;}
+  if(!isCurso && !document.getElementById('fc-nivel')?.value){toast('Seleccioná el nivel académico (Pregrado, Grado o Posgrado)','error');return;}
+  if(!duracion){toast('Duración obligatoria','error');return;}
+  // regional is auto-calculated, allow empty for EaD
+  if(!unidades.length){toast('Seleccioná al menos una unidad académica','error');return;}
+  if(unidades.includes(EAD)&&!isCurso){toast('Educación a Distancia solo admite Cursos','error');return;}
+
+  // Collect docs
+  const documentos=cDocs.map((_,i)=>({
+    tipo:document.getElementById(`doc-tipo-${i}`)?.value||'',
+    organismo:document.getElementById(`doc-org-${i}`)?.value||'',
+    numero:document.getElementById(`doc-num-${i}`)?.value||'',
+    anio:document.getElementById(`doc-anio-${i}`)?.value||'',
+    pdf:cDocs[i]?.pdf||null,
+  }));
+
+  const fd=new FormData();
+  fd.append('nombre',nombre);
+  fd.append('esCurso',String(isCurso));
+  fd.append('tipo',isCurso?'Curso':(document.getElementById('fc-nivel')?.value||''));
+  fd.append('subtipo',document.getElementById('fc-subtipo')?.value||'');
+  fd.append('unidadesAcademicas',JSON.stringify(unidades));
+  fd.append('regional',document.getElementById('fc-reg')?.value||'');
+  fd.append('disciplina',document.getElementById('fc-disc')?.value?.trim()||'');
+  fd.append('modalidad',document.getElementById('fc-mod')?.value||'Híbrida');
+  fd.append('duracion',document.getElementById('fc-dur')?.value?.trim()||'');
+  fd.append('descripcion',document.getElementById('fc-desc-ed')?.innerHTML||'');
+  fd.append('contacto',document.getElementById('fc-cont')?.value?.trim()||'');
+  fd.append('telefonoContacto',document.getElementById('fc-tel-cont')?.value?.trim()||'');
+  fd.append('requisitosTexto',document.getElementById('fc-req-ed')?.innerHTML||'');
+  fd.append('formularioInscripcion',isCurso?document.getElementById('fc-form')?.value?.trim()||'':'');
+  fd.append('programa',isCurso?document.getElementById('fc-prog')?.innerHTML||'':'');
+  fd.append('tags',JSON.stringify(cTags));
+  fd.append('disertantes',JSON.stringify(cDis));
+  fd.append('documentos',JSON.stringify(documentos));
+  fd.append('nueva',String(document.getElementById('fc-nv')?.checked||false));
+  fd.append('inscripcionAbiertaValor',String(document.getElementById('fc-ia-v')?.checked===true));
+  fd.append('inscripcionAbiertaFecha',document.getElementById('fc-ia-d')?.value||'');
+  // Default activo=true for new proposals; false only if explicitly unchecked
+  const activoChecked = document.getElementById('fc-act-v');
+  fd.append('activoValor', activoChecked ? String(activoChecked.checked) : 'true');
+  fd.append('activoFecha',document.getElementById('fc-act-d')?.value||'');
+
+  const planF=document.getElementById('fc-plan')?.files[0];
+  if(planF)fd.append('planEstudiosPDF',planF,planF.name);
+  cDocs.forEach((_,i)=>{const f=document.getElementById(`doc-pdf-${i}`)?.files[0];if(f)fd.append(`doc_pdf_${i}`,f,f.name);});
+
+  const saveBtn = document.getElementById('carr-save-btn');
+  if(saveBtn){saveBtn.disabled=true;saveBtn.style.opacity='0.5';}
+
+  // Build progress UI inside modal
+  const modal = document.querySelector('.modal');
+  let progWrap = document.getElementById('save-progress');
+  if(!progWrap && modal){
+    progWrap = document.createElement('div');
+    progWrap.id = 'save-progress';
+    progWrap.style.cssText = 'margin:12px 0 0;padding:14px 18px;background:var(--ev);border-radius:var(--r);border:1px solid var(--bd)';
+    progWrap.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:9px">' +
+        '<span style="font-size:.8rem;font-weight:600;color:var(--tx2)" id="sp-lbl">Preparando…</span>' +
+        '<span style="font-size:.78rem;color:var(--mt)" id="sp-pct">0%</span>' +
+      '</div>' +
+      '<div style="height:7px;background:var(--bd);border-radius:4px;overflow:hidden">' +
+        '<div id="sp-bar" style="height:100%;width:0%;background:var(--cy);border-radius:4px;transition:width .2s ease"></div>' +
+      '</div>';
+    const mact = modal.querySelector('.mact');
+    if(mact) mact.before(progWrap); else modal.appendChild(progWrap);
+  }
+
+  function sp(pct, label){
+    const bar = document.getElementById('sp-bar');
+    const lbl = document.getElementById('sp-lbl');
+    const pctEl = document.getElementById('sp-pct');
+    if(bar){ bar.style.width = pct+'%'; bar.style.background = pct===100 ? 'var(--gr)' : 'var(--cy)'; }
+    if(lbl && label) lbl.textContent = label;
+    if(pctEl) pctEl.textContent = pct+'%';
+  }
+  sp(5,'Iniciando…');
+
+  // XHR with real upload progress
+  function uploadFd(ep, method, formData){
+    return new Promise((resolve, reject) => {
+      const tk = sessionStorage.getItem(TK);
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, BASE + ep);
+      if(tk) xhr.setRequestHeader('Authorization','Bearer '+tk);
+      xhr.upload.onloadstart = () => sp(8,'Enviando…');
+      xhr.upload.onprogress = e => {
+        if(e.lengthComputable){
+          const pct = Math.round(8 + (e.loaded/e.total)*72);
+          sp(pct, pct<40 ? 'Enviando datos…' : pct<75 ? 'Subiendo archivos…' : 'Procesando…');
+        }
+      };
+      xhr.upload.onload = () => sp(85,'Guardando…');
+      xhr.onload = () => {
+        try{
+          const d = JSON.parse(xhr.responseText);
+          if(xhr.status>=400) reject({message: d.error||'Error '+xhr.status});
+          else resolve(d);
+        } catch { reject({message:'Error de respuesta del servidor'}); }
+      };
+      xhr.onerror = () => reject({message:'Error de red al guardar'});
+      xhr.send(formData);
+    });
+  }
+
+  try{
+    await uploadFd(id ? '/carreras/'+id : '/carreras', id ? 'PUT' : 'POST', fd);
+    sp(100,'¡Guardado correctamente!');
+    await new Promise(r=>setTimeout(r,500));
+    toast(id?'Propuesta actualizada':'Propuesta creada','success');
+    cm();
+    cp=1; cf={q:'',esCurso:'',activo:''};
+    lcarr();
+  }catch(e){
+    toast(e.message||'Error al guardar. Verificá los datos e intentá nuevamente.','error');
+    const sb=document.getElementById('carr-save-btn');
+    if(sb){sb.disabled=false;sb.style.opacity='';}
+    document.getElementById('save-progress')?.remove();
+  }
+}
+async function toggleActivarCarr(id,nombre,activar){
+  const msg=activar?`¿Activar "${nombre}"? Volverá a ser visible en el sitio.`:`¿Desactivar "${nombre}"? Quedará como "Propuesta finalizada".`;
+  if(!confirm(msg))return;
+  // Use PUT to update just the activo field
+  const fd=new FormData();
+  fd.append('activoValor',String(activar));
+  fd.append('activoFecha','');
+  if(!activar){fd.append('inscripcionAbiertaValor','false');fd.append('inscripcionAbiertaFecha','');}
+  // We need other required fields — fetch existing and resend
+  try{
+    const d=await api(`/carreras?limit=200`);
+    const c=(d.data||[]).find(x=>x.id===id);
+    if(!c){toast('Propuesta no encontrada','error');return;}
+    const fd2=new FormData();
+    fd2.append('nombre',c.nombre);
+    fd2.append('esCurso',String(!!c.esCurso));
+    fd2.append('tipo',c.tipo||'');
+    fd2.append('subtipo',c.subtipo||'');
+    fd2.append('unidadesAcademicas',JSON.stringify(c.unidadesAcademicas||[c.unidadAcademica]));
+    fd2.append('regional',c.regional||'');
+    fd2.append('disciplina',c.disciplina||'');
+    fd2.append('modalidad',c.modalidad||'Híbrida');
+    fd2.append('duracion',c.duracion||'');
+    fd2.append('descripcion',c.descripcion||'');
+    fd2.append('contacto',c.contacto||'');
+    fd2.append('telefonoContacto',c.telefonoContacto||'');
+    fd2.append('requisitosTexto',c.requisitosTexto||'');
+    fd2.append('programa',c.programa||'');
+    fd2.append('formularioInscripcion',c.formularioInscripcion||'');
+    fd2.append('tags',JSON.stringify(c.tags||[]));
+    fd2.append('disertantes',JSON.stringify(c.disertantes||[]));
+    fd2.append('documentos',JSON.stringify(c.documentos||[]));
+    fd2.append('nueva',String(!!c.nueva));
+    fd2.append('activoValor',String(activar));
+    fd2.append('activoFecha','');
+    const iaActual=activar?(c.inscripcionAbierta?.valor||false):false;
+    fd2.append('inscripcionAbiertaValor',String(iaActual));
+    fd2.append('inscripcionAbiertaFecha',activar?(c.inscripcionAbierta?.fechaHasta||''):'');
+    await apiMp(`/carreras/${id}`,'PUT',fd2);
+    toast(activar?'Propuesta activada':'Propuesta desactivada','success');
+    lcarr();
+  }catch(e){toast(e.message,'error');}
+}
+
+async function eliminarCarr(id,nombre){
+  if(!confirm('⚠️ ¿ELIMINAR DEFINITIVAMENTE "'+nombre+'"?\nEsta acción NO se puede deshacer.'))return;
+  try{
+    // Hard delete: send a special header
+    const tk=sessionStorage.getItem(TK);
+    const res=await fetch(BASE+`/carreras/${id}?hard=true`,{method:'DELETE',headers:{Authorization:`Bearer ${tk}`}});
+    const d=await res.json();
+    if(!res.ok)throw{message:d.error};
+    toast('Eliminada permanentemente','success');
+    lcarr();
+  }catch(e){toast(e.message,'error');}
+}
+
+async function delCarr(id,nombre){
+  // Legacy — now uses toggleActivarCarr
+  await toggleActivarCarr(id,nombre,false);
+}
+
+// ── USUARIOS ──────────────────────────────────────────────
+async function rusr(){
+  if(me.rol==='unidades'){document.getElementById('ct').innerHTML='<div class="empty"><div class="ei">🔒</div><p>Sin permisos</p></div>';return;}
+  document.getElementById('ct').innerHTML=`<div class="tb"><div class="sb2">🔍 <input type="text" id="us" placeholder="Buscar…"/></div><button class="btn btn-cy" onclick="openUsrForm(null)">+ Nuevo usuario</button></div><div id="utb"></div>`;
+  document.getElementById('us').addEventListener('input',e=>{uq=e.target.value;lusers();});lusers();
+}
+async function lusers(){
+  try{
+    let rows=(await api('/usuarios')).data||[];
+    if(uq){const ql=uq.toLowerCase();rows=rows.filter(u=>u.nombre.toLowerCase().includes(ql)||u.apellido.toLowerCase().includes(ql)||u.email.toLowerCase().includes(ql));}
+    document.getElementById('utb').innerHTML=rows.length?`<div class="tw"><table>
+      <thead><tr><th>Nombre</th><th>Correo</th><th>Username</th><th>Rol</th><th>Unidades</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${rows.map(u=>`<tr>
+        <td style="font-weight:600">${esc(u.nombre)} ${esc(u.apellido)}</td>
+        <td style="font-size:.78rem;color:var(--mt)">${esc(u.email)}</td>
+        <td style="font-size:.78rem">${esc(u.username)}</td>
+        <td><span class="bx ${u.rol==='root'?'bbr':u.rol==='institucional'?'bcy':'bgr'}">${RL[u.rol]||u.rol}</span></td>
+        <td style="font-size:.72rem;color:var(--mt);max-width:150px">${(u.unidades||[]).join(', ')||'—'}</td>
+        <td><span class="bx ${u.activo!==false?'bgr':'brd'}">${u.activo!==false?'Activo':'Inactivo'}</span></td>
+        <td><div class="acts" style="gap:4px">
+          <button title="Editar usuario" class="btn btn-ge btn-sm" style="padding:5px 8px" onclick="openUsrForm(${u.id})">✏️</button>
+          ${me.rol==='root'?(u.activo!==false
+            ?`<button title="Desactivar usuario" class="btn btn-sm" style="padding:5px 8px;background:rgba(220,38,38,.07);color:var(--rd);border:1px solid rgba(220,38,38,.13)" onclick="delUsr(${u.id},'${esc(u.nombre+' '+u.apellido)}',false)">🔒</button>`
+            :`<button title="Activar usuario" class="btn btn-sm" style="padding:5px 8px;background:rgba(58,170,53,.08);color:var(--gr);border:1px solid rgba(58,170,53,.2)" onclick="delUsr(${u.id},'${esc(u.nombre+' '+u.apellido)}',true)">🔓</button>`
+          ):''}
+          ${me.rol==='root'?`<button title="Eliminar definitivamente" class="btn btn-rd btn-sm" style="padding:5px 8px" onclick="eliminarUsr(${u.id},'${esc(u.nombre+' '+u.apellido)}')">🗑️</button>`:''}
+        </div></td>
+      </tr>`).join('')}</tbody>
+    </table></div>`:'<div class="empty"><div class="ei">👤</div><p>Sin usuarios</p></div>';
+  }catch(e){toast(e.message,'error');}
+}
+function getRoles(){if(me.rol==='root')return[['root','root'],['institucional','Administrador Institucional'],['unidades','Administrador de Unidades']];if(me.rol==='institucional')return[['unidades','Administrador de Unidades']];return[];}
+
+async function openUsrForm(id){
+  let u=null;if(id){try{u=(await api('/usuarios')).data?.find(x=>x.id===id);}catch{}}
+  const roles=getRoles();const udis=me.rol==='institucional'?(me.unidades||[]):(cfg.unidadesAcademicas||[]);const showU=(r)=>r==='unidades';
+  showModal(`<div class="mhdr"><h2 class="mtitle">${id?'Editar':'Nuevo'} usuario</h2><div class="mclose" onclick="cm()">✕</div></div>
+    <div class="fgrid">
+      <div class="fg"><label class="fl">Nombre *</label><input class="fi" id="fu-n" value="${esc(u?.nombre||'')}" placeholder="Juan Pablo"/><div class="fhint">Formato Nombre Propio</div></div>
+      <div class="fg"><label class="fl">Apellido *</label><input class="fi" id="fu-a" value="${esc(u?.apellido||'')}"/></div>
+      <div class="fg"><label class="fl">Documento *</label><input class="fi" id="fu-d" value="${esc(u?.dni||'')}" placeholder="28456789" maxlength="8" oninput="this.value=this.value.replace(/\\D/g,'')"/></div>
+      <div class="fg"><label class="fl">Teléfono *</label><input class="fi" id="fu-t" value="${esc(u?.telefono||'')}" placeholder="3764110000" oninput="this.value=this.value.replace(/[^0-9+\\s-]/g,'')"/><div class="fhint">+54 9 XXXX XX-XXXX</div></div>
+      <div class="fg ff"><label class="fl">Correo institucional *</label><input class="fi" id="fu-e" type="email" value="${esc(u?.email||'')}" placeholder="usuario@unam.edu.ar"/><div class="fhint">Username = parte antes del @</div></div>
+      <div class="fg"><label class="fl">Rol *</label><select class="fs" id="fu-r" onchange="onRolCh()"><option value="">Seleccionar</option>${roles.map(([v,l])=>`<option value="${v}" ${u?.rol===v?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="fg ff" id="fu-u-grp" style="${u&&showU(u.rol)?'':'display:none'}">
+        <label class="fl">Unidades académicas *</label>
+        <div class="units-list">${udis.map(un=>{const chk=(u?.unidades||[]).includes(un);return`<label class="unit-item${chk?' sel':''}" onclick="this.classList.toggle('sel');this.querySelector('input').checked=this.classList.contains('sel')"><input type="checkbox" value="${esc(un)}" ${chk?'checked':''}/>${esc(un)}</label>`;}).join('')}</div>
+        <div class="fhint">Podés asignar una o más</div>
+      </div>
+      ${id?`<div class="fg ff" style="background:var(--ev);border:1px solid rgba(0,163,224,.2);border-radius:var(--r);padding:12px"><label class="fl" style="color:var(--cy)">Contraseña</label><button class="btn btn-cy btn-sm" style="margin-top:6px" onclick="resetPass(${id})">Generar nueva contraseña</button><div id="rp-res"></div></div>
+      <div class="fg" style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="fu-act" ${u?.activo!==false?'checked':''} style="accent-color:var(--cy);width:14px;height:14px"/><label class="fl" style="margin:0;text-transform:none;font-size:.83rem">Usuario activo</label></div>`:''}
+    </div>
+    <div class="mact"><button class="btn btn-ol" onclick="cm()">Cancelar</button><button class="btn btn-cy" onclick="saveUsr(${id||'null'})">Guardar</button></div>`);
+}
+function onRolCh(){const r=document.getElementById('fu-r')?.value;const g=document.getElementById('fu-u-grp');if(g)g.style.display=r==='unidades'?'':'none';}
+async function resetPass(id){
+  if(!confirm('¿Generar nueva contraseña? El usuario deberá cambiarla en su próximo login.'))return;
+  try{const d=await api(`/usuarios/${id}`,{method:'PUT',body:JSON.stringify({resetPassword:true})});const rr=document.getElementById('rp-res');if(rr&&d.generatedPassword){rr.innerHTML=`<div class="gp" style="display:block;margin-top:10px"><div class="gp-lbl">Nueva contraseña</div><div class="gp-row"><span class="gp-code" id="gpc-${id}">••••••••••</span><button class="gp-eye" onclick="tgp('gpc-${id}','${d.generatedPassword}',this)">👁</button><button class="gp-copy" onclick="cpP('${d.generatedPassword}')">Copiar</button></div><div class="gp-note">Copiá esta contraseña y entregásela al usuario. No se mostrará nuevamente.</div></div>`;}toast('Contraseña reseteada','success');lusers();}catch(e){toast(e.message,'error');}
+}
+async function saveUsr(id){
+  const nombre=document.getElementById('fu-n')?.value?.trim(),apellido=document.getElementById('fu-a')?.value?.trim(),dni=document.getElementById('fu-d')?.value?.trim(),email=document.getElementById('fu-e')?.value?.trim(),tel=document.getElementById('fu-t')?.value?.trim(),rol=document.getElementById('fu-r')?.value;
+  const unidades=[...document.querySelectorAll('#fu-u-grp input[type=checkbox]:checked')].map(el=>el.value);
+  if(!nombre){toast('Nombre obligatorio','error');return;}
+  if(!apellido){toast('Apellido obligatorio','error');return;}
+  if(!dni){toast('Documento obligatorio','error');return;}
+  if(!email){toast('Correo obligatorio','error');return;}
+  if(!tel){toast('Teléfono obligatorio','error');return;}
+  if(!rol){toast('Rol obligatorio','error');return;}
+  if(rol==='unidades'&&!unidades.length){toast('Asigná al menos una unidad académica para este rol','error');return;}
+  const body={nombre,apellido,dni,email,telefono:tel,rol,unidades};if(id)body.activo=document.getElementById('fu-act')?.checked!==false;
+  const usrSaveBtn=document.querySelector('.modal .btn-cy:last-child');
+  if(usrSaveBtn){usrSaveBtn.disabled=true;usrSaveBtn.textContent='Guardando…';}
+  try{
+    let d;if(id)d=await api(`/usuarios/${id}`,{method:'PUT',body:JSON.stringify(body)});else d=await api('/usuarios',{method:'POST',body:JSON.stringify(body)});
+    if(!id&&d.generatedPassword){
+  lusers();
+  // Store password in a closure variable to avoid quote issues in HTML
+  window._newUserPass = d.generatedPassword;
+  window._newUserName = d.nombre + ' ' + d.apellido;
+  window._newUserUsername = d.username;
+  showModal(
+    '<div class="mhdr"><h2 class="mtitle">&#9989; Usuario creado correctamente</h2><div class="mclose" onclick="cm()">&#10005;</div></div>' +
+    '<div class="alr alr-info" style="margin-bottom:14px">El usuario <strong>' + esc(d.nombre) + ' ' + esc(d.apellido) + '</strong> fue creado. Username: <strong>' + esc(d.username) + '</strong></div>' +
+    '<div class="gp" style="display:block">' +
+      '<div class="gp-lbl">Contrase&#241;a generada autom&#225;ticamente</div>' +
+      '<div class="gp-row">' +
+        '<span class="gp-code" id="new-gpc">&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;</span>' +
+        '<button class="gp-eye" onclick="tgpNew()">&#128065;</button>' +
+        '<button class="gp-copy" onclick="cpNew()">Copiar</button>' +
+      '</div>' +
+      '<div class="gp-note" style="color:var(--rd);font-weight:600">&#9888;&#65039; Anot&#225; o copi&#225; esta contrase&#241;a antes de cerrar. No se mostrar&#225; nuevamente.</div>' +
+    '</div>' +
+    '<div class="mact"><button class="btn btn-cy" onclick="cm()">Cerrar</button></div>'
+  );
+  }else{toast(id?'Usuario actualizado':'Usuario creado','success');cm();lusers();}
+  }catch(e){toast(e.message,'error');const sb=document.querySelector('.modal .btn-cy:last-child');if(sb){sb.disabled=false;sb.textContent='Guardar';}}
+}
+async function delUsr(id,nombre,activar=false){
+  if(activar){
+    if(!confirm(`¿Reactivar a "${nombre}"?`))return;
+    try{await api(`/usuarios/${id}`,{method:'PUT',body:JSON.stringify({activo:true})});toast('Usuario reactivado','success');lusers();}catch(e){toast(e.message,'error');}
+    return;
+  }
+  if(!confirm(`¿Desactivar a "${nombre}"?`))return;
+  try{await api(`/usuarios/${id}`,{method:'DELETE'});toast('Usuario desactivado','success');lusers();}catch(e){toast(e.message,'error');}
+}
+async function eliminarUsr(id,nombre){
+  if(!confirm(`⚠️ ¿ELIMINAR DEFINITIVAMENTE a "${nombre}"?\nEsta acción NO se puede deshacer.`))return;
+  try{
+    const tk=sessionStorage.getItem(TK);
+    const res=await fetch(BASE+`/usuarios/${id}?hard=true`,{method:'DELETE',headers:{Authorization:`Bearer ${tk}`}});
+    const d=await res.json();
+    if(!res.ok)throw{message:d.error};
+    toast('Usuario eliminado permanentemente','success');lusers();
+  }catch(e){toast(e.message,'error');}
+}
+
+// ── CONFIGURACIÓN (root only) ─────────────────────────────
+async function rcfg(){
+  if(me.rol!=='root'){document.getElementById('ct').innerHTML='<div class="empty"><div class="ei">🔒</div><p>Solo accesible para root</p></div>';return;}
+  const ct=document.getElementById('ct');
+  ct.innerHTML='<div class="empty"><div class="ei">⏳</div></div>';
+  try{
+    const cfgData=await api('/config');
+    const isOpen=cfgData.accesoPublico!==false;
+    ct.innerHTML=`
+      <div style="max-width:560px">
+        <div class="alr alr-info" style="margin-bottom:20px">Esta configuración aplica al sitio público. Solo el usuario root puede modificarla.</div>
+        <div class="tw" style="margin-bottom:18px">
+          <div style="padding:18px">
+            <div class="fl" style="margin-bottom:12px;font-size:.8rem">Modo de acceso al sitio público</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <label style="display:flex;align-items:flex-start;gap:10px;padding:14px;border:1.5px solid ${isOpen?'var(--cy)':'var(--bd)'};border-radius:var(--r);cursor:pointer;background:${isOpen?'rgba(0,163,224,.05)':'var(--sf)'}">
+                <input type="radio" name="access-mode" value="open" ${isOpen?'checked':''} style="accent-color:var(--cy);margin-top:2px;flex-shrink:0"/>
+                <div>
+                  <div style="font-weight:600;font-size:.88rem">Acceso abierto</div>
+                  <div style="font-size:.78rem;color:var(--mt);margin-top:2px">Cualquier persona puede ver el sitio sin autenticación.</div>
+                </div>
+              </label>
+              <label style="display:flex;align-items:flex-start;gap:10px;padding:14px;border:1.5px solid ${!isOpen?'var(--cy)':'var(--bd)'};border-radius:var(--r);cursor:pointer;background:${!isOpen?'rgba(0,163,224,.05)':'var(--sf)'}">
+                <input type="radio" name="access-mode" value="restricted" ${!isOpen?'checked':''} style="accent-color:var(--cy);margin-top:2px;flex-shrink:0"/>
+                <div>
+                  <div style="font-weight:600;font-size:.88rem">Acceso restringido (OAuth)</div>
+                  <div style="font-size:.78rem;color:var(--mt);margin-top:2px">Solo usuarios autenticados con cuentas autorizadas pueden ver el sitio.</div>
+                </div>
+              </label>
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:16px">
+              <button class="btn btn-cy" onclick="saveAccesoPublico()">Guardar configuración</button>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:.78rem;color:var(--mt)">Estado actual: <strong id="cfg-status-label">${isOpen?'Acceso abierto':'Acceso restringido (OAuth)'}</strong></div>
+      </div>`;
+  }catch(e){ct.innerHTML=`<div class="empty"><div class="ei">⚠️</div><p>${e.message}</p></div>`;}
+}
+
+async function saveAccesoPublico(){
+  const val=document.querySelector('input[name="access-mode"]:checked')?.value;
+  if(!val){toast('Seleccioná un modo','error');return;}
+  try{
+    await api('/config/acceso-publico',{method:'POST',body:JSON.stringify({value:val==='open'})});
+    toast('Configuración guardada correctamente','success');
+    // Update status label without re-rendering (which would lose radio state)
+    const statusEl=document.getElementById('cfg-status-label');
+    if(statusEl)statusEl.textContent=val==='open'?'Acceso abierto':'Acceso restringido (OAuth)';
+  }catch(e){toast(e.message,'error');}
+}
+
+// ── REGISTRO DE CAMBIOS (root only) ──────────────────────
+let _allLogs=[];
+async function rlog(){
+  if(me.rol!=='root'){document.getElementById('ct').innerHTML='<div class="empty"><div class="ei">🔒</div><p>Solo accesible para root</p></div>';return;}
+  const ct=document.getElementById('ct');
+  ct.innerHTML='<div class="empty"><div class="ei">⏳</div></div>';
+  try{
+    const d=await api('/audit');
+    _allLogs=d.logs||[];
+    if(!_allLogs.length){ct.innerHTML='<div class="empty"><div class="ei">📋</div><p>Sin cambios registrados aún.</p></div>';return;}
+    const actions=[...new Set(_allLogs.map(l=>l.action))].sort();
+    const entities=[...new Set(_allLogs.map(l=>l.entity))].sort();
+    ct.innerHTML=`
+      <div class="tb" style="margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <select class="fsel" id="log-filt-action" onchange="renderLogTable()">
+          <option value="">Todas las acciones</option>
+          ${actions.map(a=>`<option>${a}</option>`).join('')}
+        </select>
+        <select class="fsel" id="log-filt-entity" onchange="renderLogTable()">
+          <option value="">Todas las entidades</option>
+          ${entities.map(e=>`<option>${e}</option>`).join('')}
+        </select>
+        <select class="fsel" id="log-filt-user" onchange="renderLogTable()">
+          <option value="">Todos los usuarios</option>
+          ${[...new Set(_allLogs.map(l=>l.user))].map(u=>`<option>${u}</option>`).join('')}
+        </select>
+        <button class="btn btn-ol btn-sm" onclick="document.getElementById('log-filt-action').value='';document.getElementById('log-filt-entity').value='';document.getElementById('log-filt-user').value='';renderLogTable()">Limpiar filtros</button>
+      </div>
+      <div id="log-table-wrap"></div>`;
+    renderLogTable();
+  }catch(e){ct.innerHTML=`<div class="empty"><div class="ei">⚠️</div><p>${e.message}</p></div>`;}
+}
+function renderLogTable(){
+  const fa=document.getElementById('log-filt-action')?.value||'';
+  const fe=document.getElementById('log-filt-entity')?.value||'';
+  const fu=document.getElementById('log-filt-user')?.value||'';
+  const filtered=_allLogs.filter(l=>(!fa||l.action===fa)&&(!fe||l.entity===fe)&&(!fu||l.user===fu));
+  const wrap=document.getElementById('log-table-wrap');if(!wrap)return;
+  if(!filtered.length){wrap.innerHTML='<div class="empty" style="padding:24px"><p>Sin resultados para estos filtros.</p></div>';return;}
+  const colorMap={CREAR:'color:var(--gr)',EDITAR:'color:var(--cy)',BAJA:'color:var(--rd)',ELIMINAR:'color:var(--rd);font-weight:700',EXPORT:'color:var(--br)',IMPORT:'color:var(--br)'};
+  wrap.innerHTML=`<div class="tw"><table>
+    <thead><tr><th>Fecha y hora</th><th>Acción</th><th>Entidad</th><th>Detalle</th><th>Usuario</th><th>Rol</th></tr></thead>
+    <tbody>${filtered.map(l=>`<tr>
+      <td style="font-size:.78rem;color:var(--mt);white-space:nowrap">${fmtD(l.ts)} ${new Date(l.ts).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</td>
+      <td style="font-size:.82rem;font-weight:600;${colorMap[l.action]||''}">${esc(l.action)}</td>
+      <td style="font-size:.82rem">${esc(l.entity)}</td>
+      <td style="font-size:.82rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.detail)}</td>
+      <td style="font-size:.82rem">${esc(l.user)}</td>
+      <td style="font-size:.75rem;color:var(--mt)">${esc(l.rol)}</td>
+    </tr>`).join('')}</tbody>
+  </table></div><div style="font-size:.76rem;color:var(--mt);margin-top:8px">${filtered.length} registro${filtered.length!==1?'s':''} encontrado${filtered.length!==1?'s':''}</div>`;
+}
+
+// ── BACKUP (root only) ─────────────────────────────────────
+async function rbkp(){
+  if(me.rol!=='root'){document.getElementById('ct').innerHTML='<div class="empty"><div class="ei">🔒</div><p>Solo accesible para root</p></div>';return;}
+  const ct=document.getElementById('ct');
+  ct.innerHTML=`<div style="max-width:520px">
+    <div class="alr alr-info" style="margin-bottom:20px">Los backups exportan carreras y usuarios (sin contraseñas). Al importar, las carreras se reemplazan completamente; los usuarios se fusionan por email sin sobrescribir contraseñas.</div>
+    <div class="tw" style="margin-bottom:16px">
+      <div style="padding:20px">
+        <div class="fl" style="margin-bottom:12px">Exportar datos</div>
+        <p style="font-size:.84rem;color:var(--mt);margin-bottom:14px">Descarga un archivo JSON con todas las carreras y usuarios actuales.</p>
+        <button class="btn btn-cy" id="btn-export" onclick="doExport()">Exportar backup (.json)</button>
+        <div id="export-progress" style="display:none;margin-top:14px">
+          <div style="height:4px;background:var(--bd);border-radius:2px;overflow:hidden;margin-bottom:8px">
+            <div id="export-bar" style="height:100%;width:0%;background:var(--cy);border-radius:2px;transition:width .3s ease"></div>
+          </div>
+          <span id="export-status" style="font-size:.78rem;color:var(--mt)">Preparando…</span>
+        </div>
+      </div>
+    </div>
+    <div class="tw">
+      <div style="padding:20px">
+        <div class="fl" style="margin-bottom:12px">Importar datos</div>
+        <p style="font-size:.84rem;color:var(--mt);margin-bottom:14px">Seleccioná un archivo de backup previamente exportado desde esta plataforma.</p>
+        <div class="alr alr-warn" style="margin-bottom:12px">Atención: las carreras existentes serán reemplazadas por las del archivo importado.</div>
+        <input type="file" id="bkp-file" accept=".json" style="display:none" onchange="onBkpFileSelected(this)"/>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-ol" onclick="document.getElementById('bkp-file').click()">Seleccionar archivo…</button>
+          <span id="bkp-filename" style="font-size:.82rem;color:var(--mt);flex:1">Ningún archivo seleccionado</span>
+          <button class="btn btn-cy" id="btn-import" style="display:none" onclick="doImport()">Subir e importar</button>
+        </div>
+        <div id="import-progress" style="display:none;margin-top:14px">
+          <div style="height:4px;background:var(--bd);border-radius:2px;overflow:hidden;margin-bottom:8px">
+            <div id="import-bar" style="height:100%;width:0%;background:var(--gr);border-radius:2px;transition:width .3s ease"></div>
+          </div>
+          <span id="import-status" style="font-size:.78rem;color:var(--mt)">Procesando…</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+async function doExport(){
+  const prog=document.getElementById('export-progress');
+  const bar=document.getElementById('export-bar');
+  const status=document.getElementById('export-status');
+  const btn=document.getElementById('btn-export');
+  if(prog)prog.style.display='';
+  if(btn)btn.disabled=true;
+  const steps=[{w:20,msg:'Conectando con el servidor…'},{w:50,msg:'Exportando carreras…'},{w:80,msg:'Exportando usuarios…'},{w:95,msg:'Generando archivo…'}];
+  let si=0;
+  const iv=setInterval(()=>{
+    if(si<steps.length){const s=steps[si++];if(bar)bar.style.width=s.w+'%';if(status)status.textContent=s.msg;}
+  },400);
+  try{
+    const d=await api('/backup/export');
+    clearInterval(iv);
+    if(bar)bar.style.width='100%';
+    if(status)status.textContent='¡Exportación completada!';
+    if(status)status.style.color='var(--gr)';
+    const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='backup-unam-'+new Date().toISOString().slice(0,10)+'.json';
+    a.click();
+    toast('Backup exportado correctamente','success');
+    setTimeout(()=>{if(prog)prog.style.display='none';if(bar)bar.style.width='0%';if(status){status.textContent='Preparando…';status.style.color='';}if(btn)btn.disabled=false;},2500);
+  }catch(e){
+    clearInterval(iv);
+    if(status){status.textContent='Error: '+e.message;status.style.color='var(--rd)';}
+    if(btn)btn.disabled=false;
+    toast(e.message,'error');
+  }
+}
+async function doImport(input){
+  const file=input.files[0];if(!file)return;
+  document.getElementById('bkp-filename').textContent=file.name;
+  if(!confirm(`¿Importar "${file.name}"?
+
+Las carreras actuales serán reemplazadas. Los usuarios se fusionarán sin sobrescribir contraseñas.`)){input.value='';return;}
+  try{
+    const text=await file.text();
+    const data=JSON.parse(text);
+    const r=await api('/backup/import',{method:'POST',body:JSON.stringify(data)});
+    toast(`Importado: ${r.carreras} carreras, ${r.usuarios} usuarios`,'success');
+    input.value='';
+  }catch(e){toast(e.message||'Error al importar','error');}
+}
+
+// ── PASS HELPERS ──────────────────────────────────────────
+function tgpNew(){
+  const el=document.getElementById('new-gpc');
+  const btn=el?.nextElementSibling;
+  if(!el)return;
+  const hidden=el.textContent.includes('•');
+  el.textContent=hidden?(window._newUserPass||''):'••••••••••';
+  if(btn)btn.textContent=hidden?'🙈':'👁';
+}
+function cpNew(){
+  const p=window._newUserPass||'';
+  navigator.clipboard?.writeText(p).then(()=>toast('Copiada al portapapeles','success')).catch(()=>toast('No se pudo copiar','error'));
+}
+function tgp(id,pass,btn){const el=document.getElementById(id);if(!el)return;const s=el.textContent!=='••••••••••';el.textContent=s?'••••••••••':pass;btn.textContent=s?'👁':'🙈';}
+function cpP(p){navigator.clipboard?.writeText(p).then(()=>toast('Copiada al portapapeles','success')).catch(()=>toast('No se pudo copiar automáticamente','error'));}
+
+// ── INIT ──────────────────────────────────────────────────
+document.getElementById('lbtn').addEventListener('click',doLogin);
+document.getElementById('lp').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+document.getElementById('le').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('lp').focus();});
+const tk=sessionStorage.getItem(TK),usr=sessionStorage.getItem(UK);
+if(tk&&usr){try{me=JSON.parse(usr);fetch(BASE+'/auth/me',{headers:{Authorization:`Bearer ${tk}`}}).then(r=>r.ok?r.json():null).then(async d=>{if(d?.user){me=d.user;sessionStorage.setItem(UK,JSON.stringify(me));await initApp();}else logout();}).catch(()=>initApp());}catch{logout();}}
+</script>
+</body>
+</html>

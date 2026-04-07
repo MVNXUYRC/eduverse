@@ -1,0 +1,65 @@
+{
+  "carreras": [],
+  "unidadesAcademicas": [
+    "Educación a Distancia",
+    "Escuela Agrotécnica Eldorado",
+    "Escuela de Enfermería",
+    "Facultad de Arte y Diseño",
+    "Facultad de Ciencias Económicas",
+    "Facultad de Ciencias Exactas, Químicas y Naturales",
+    "Facultad de Ciencias Forestales",
+    "Facultad de Humanidades y Ciencias Sociales",
+    "Facultad de Ingeniería"
+  ],
+  "regionales": [
+    "Posadas",
+    "Oberá",
+    "Eldorado"
+  ],
+  "localidades": [
+    "Posadas",
+    "Eldorado",
+    "Oberá",
+    "Virtual"
+  ],
+  "disciplinas": [
+    "Informática",
+    "Administración",
+    "Educación",
+    "Ciencias Ambientales",
+    "Ciencias Exactas",
+    "Ingeniería",
+    "Salud",
+    "Turismo",
+    "Ciencias Sociales",
+    "Derecho",
+    "Ciencias Naturales",
+    "Arte y Cultura",
+    "Ingeniería Forestal",
+    "Letras",
+    "Comunicación",
+    "Biología",
+    "Química",
+    "Matemática",
+    "Física"
+  ],
+  "usuarios": [],
+  "sesiones": [],
+  "tiposDocumento": [
+    "Resolución",
+    "Disposición",
+    "Ordenanza"
+  ],
+  "organismos": [
+    "Consejo Superior",
+    "Ministerial",
+    "SPU",
+    "SSPU",
+    "CONEAU"
+  ],
+  "config": {
+    "acceso_publico": true,
+    "acceso_publico_modificado_por": null,
+    "acceso_publico_modificado_en": null
+  }
+}
