@@ -2,15 +2,15 @@
   "name": "ead",
   "version": "1.0.0",
   "description": "Plataforma de Educación a Distancia - UNaM",
-  "main": "backend/server.js",
+  "main": "backend/server-standalone.js",
   "scripts": {
     "start": "node backend/server-standalone.js",
-    "start:express": "node backend/server.js",
+    "start:legacy": "node backend/server.js",
     "dev": "node --watch backend/server-standalone.js",
-    "test": "node --test backend/admin/router.test.js",
+    "test": "node --test backend/admin/router.test.js backend/persistence/db-config.test.js",
     "db:migrate": "node backend/scripts/migrate.js",
     "db:import": "node backend/scripts/import-db-json.js",
-    "dev:pg": "DATABASE_URL=$DATABASE_URL node --watch backend/server-standalone.js",
+    "db:seed": "node backend/scripts/import-db-json.js backend/data/db.json",
     "backup:smoke": "node backend/scripts/backup-smoke.js"
   },
   "dependencies": {

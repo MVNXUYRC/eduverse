@@ -8,8 +8,11 @@ const http = require('http');
 const fs   = require('fs');
 const path = require('path');
 const url  = require('url');
+const { loadEnvFiles } = require('./config/load-env');
 const { createStore } = require('./persistence');
 const { StateRepository } = require('./repositories/state-repository');
+
+loadEnvFiles();
 
 const PORT         = process.env.PORT || 3000;
 const NODE_ENV     = process.env.NODE_ENV || 'development';
@@ -221,7 +224,7 @@ async function handlePublicAuth(req, res, pathname) {
     // Check 1: static allow-list (auth-config.js)
     const inStaticList = ALLOWED_EMAILS.map(e=>e.toLowerCase().trim()).includes(email);
     if (inStaticList) return jsonResponse(res,{allowed:true,email,source:'static'});
-    // Check 2: registered users in db.json (active users)
+    // Check 2: registered users in persistent store (active users)
     const dbUser = (db.usuarios||[]).find(u=>
       u.email.toLowerCase()===email && u.activo!==false
     );

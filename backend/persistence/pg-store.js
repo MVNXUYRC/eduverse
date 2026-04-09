@@ -16,11 +16,10 @@ function toArray(value) {
 }
 
 class PgStore {
-  constructor(databaseUrl) {
+  constructor(connectionConfig) {
     const Pool = getPoolCtor();
     this.pool = new Pool({
-      connectionString: databaseUrl,
-      ssl: process.env.PGSSL_DISABLE === 'true' ? false : { rejectUnauthorized: false },
+      ...connectionConfig,
     });
     this.mode = 'postgres';
   }

@@ -1,6 +1,9 @@
 #!/usr/bin/env node
+const { loadEnvFiles } = require('../config/load-env');
 const { createStore } = require('../persistence');
 const { buildBackupPayload, applyBackupPayload } = require('../admin/backup-utils');
+
+loadEnvFiles();
 
 function clone(obj) {
   return JSON.parse(JSON.stringify(obj));

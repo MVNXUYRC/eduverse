@@ -70,3 +70,51 @@ Este archivo se usa para llevar trazabilidad funcional y técnica de los cambios
   - `node --check frontend/js/app.js`
   - prueba manual de navegación de páginas y zoom.
 - Estado: `Validado`
+
+## 2026-04-09 - Migración de persistencia a PostgreSQL y configuración operativa
+- Tipo: `Refactor`
+- Módulo: `Persistencia + Backend + DevOps`
+- Resumen: se reemplazó la persistencia en JSON por PostgreSQL como backend principal de datos.
+- Motivo: eliminar dependencia de archivos planos para operación real y robusta en producción.
+- Impacto funcional:
+  - las operaciones CRUD pasan a persistir en base de datos PostgreSQL.
+  - se agregan scripts de migración/importación para inicializar esquema y datos.
+  - se mantiene compatibilidad funcional del flujo de administración y consulta pública.
+- Archivos modificados:
+  - `backend/persistence/index.js`
+  - `backend/persistence/pg-store.js`
+  - `backend/persistence/db-config.js`
+  - `backend/scripts/migrate.js`
+  - `backend/scripts/import-db-json.js`
+  - `backend/server-standalone.js`
+  - `backend/server.js`
+  - `package.json`
+  - `README.md`
+  - `.env.example`
+- Riesgos/consideraciones:
+  - requiere variables de entorno de DB válidas y disponibilidad del servicio PostgreSQL.
+  - para entorno local se usa `PGSSL_DISABLE=true` cuando la instancia no soporta SSL.
+- Validación:
+  - `npm run db:migrate`
+  - `npm run db:seed`
+  - `npm run backup:smoke`
+  - `npm test`
+- Estado: `Validado`
+
+## 2026-04-09 - Autoarranque de servicios al iniciar sistema
+- Tipo: `Infra`
+- Módulo: `DevOps`
+- Resumen: `ead-up.sh` ahora intenta iniciar el contenedor PostgreSQL y espera disponibilidad antes de arrancar backend.
+- Motivo: evitar fallas de arranque tras reinicio cuando Node sube antes que la base.
+- Impacto funcional:
+  - al ejecutar `./scripts/ead-up.sh start|prod` se autoarranca `ead-postgres` si existe.
+  - mejora la estabilidad del inicio automático al reiniciar la PC.
+- Archivos modificados:
+  - `scripts/ead-up.sh`
+- Riesgos/consideraciones:
+  - requiere Docker instalado y permisos del usuario para usarlo.
+  - se puede desactivar con `AUTO_START_DB=false`.
+- Validación:
+  - chequeo de sintaxis `bash -n scripts/ead-up.sh`
+  - arranque manual con `./scripts/ead-up.sh prod`
+- Estado: `Validado`

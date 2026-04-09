@@ -9,17 +9,21 @@ Aplicación web completa de educación a distancia con buscador avanzado de carr
 ```
 ead/
 ├── backend/
-│   ├── server.js              # Servidor Express principal
-│   ├── routes/
-│   │   └── careers.js         # API REST: búsqueda y filtros
+│   ├── server-standalone.js   # Servidor principal (API pública + admin)
+│   ├── admin/                 # Router admin, auth, backup
+│   ├── persistence/           # PgStore, esquema SQL, config DB
+│   ├── repositories/          # Repositorio de estado
+│   ├── scripts/               # Migración e importación de datos
 │   └── data/
-│       └── careers.json       # Base de datos simulada (20 carreras)
+│       └── db.json            # Dataset legado para import inicial
 ├── frontend/
 │   ├── index.html             # SPA shell
+│   ├── cpanel.html            # cPanel administrativo
 │   ├── css/
 │   │   └── styles.css         # Design system completo
 │   └── js/
 │       └── app.js             # Lógica, router, API client
+├── docs/                      # Reglas de negocio y documentación funcional
 ├── package.json
 └── README.md
 ```
@@ -31,6 +35,7 @@ ead/
 ### Requisitos
 - Node.js v18 o superior
 - npm v8 o superior
+- PostgreSQL 14+ (recomendado)
 
 ### Pasos
 
@@ -41,7 +46,17 @@ cd ead
 # 2. Instalar dependencias
 npm install
 
-# 3. Iniciar en modo producción
+# 3. Configurar variables de entorno
+cp .env.example .env.local
+# editar .env.local con credenciales PostgreSQL
+
+# 4. Crear esquema en PostgreSQL
+npm run db:migrate
+
+# 5. (opcional, primera vez) importar datos seed desde JSON legado
+npm run db:seed
+
+# 6. Iniciar en modo producción
 npm start
 
 # O en modo desarrollo (con hot reload)
@@ -166,24 +181,25 @@ GET /api/careers?page=2&limit=6
 
 ---
 
-## 🔧 Variables de entorno
+## 🔧 Variables de entorno (PostgreSQL)
 
 | Variable | Default | Descripción |
 |----------|---------|-------------|
 | `PORT` | 3000 | Puerto del servidor |
-| `DATABASE_URL` | _(vacío)_ | Si está definida, activa modo PostgreSQL |
+| `DATABASE_URL` | _(vacío)_ | Cadena de conexión PostgreSQL completa (prioritaria) |
+| `DB_HOST` | _(vacío)_ | Host PostgreSQL (alternativa a DATABASE_URL) |
+| `DB_PORT` | 5432 | Puerto PostgreSQL |
+| `DB_NAME` | _(vacío)_ | Nombre de base |
+| `DB_USER` | _(vacío)_ | Usuario PostgreSQL |
+| `DB_PASSWORD` | _(vacío)_ | Contraseña PostgreSQL |
 | `PGSSL_DISABLE` | `false` | Si es `true`, desactiva SSL al conectar a PostgreSQL |
 | `ADMIN_JWT_SECRET` | _(obligatoria en producción)_ | Clave fuerte para firmar JWT del cPanel |
 | `ROOT_PASSWORD` | _(obligatoria para root)_ | Contraseña del usuario root del cPanel |
 
-## 🗄️ Persistencia (JSON + PostgreSQL)
+## 🗄️ Persistencia (PostgreSQL principal)
 
-El sistema ahora soporta dos modos de persistencia:
-
-1. `JSON` (legacy): si `DATABASE_URL` **no** está definida.
-2. `PostgreSQL`: si `DATABASE_URL` está definida.
-
-La API pública y admin mantiene el mismo contrato JSON de respuesta.
+La aplicación usa PostgreSQL como backend de persistencia principal para todo CRUD y lectura.
+El contrato JSON de respuesta de la API pública/admin se mantiene.
 
 ### Esquema SQL inicial
 
@@ -199,27 +215,21 @@ Incluye tablas para:
 ### Comandos de migración local
 
 ```bash
-# 1) Definir DATABASE_URL (ejemplo local)
-export DATABASE_URL="postgres://postgres:postgres@localhost:5432/ead"
+# 1) Definir variables en .env.local (DATABASE_URL o DB_*)
 
 # 2) Aplicar esquema
 npm run db:migrate
 
-# 3) Importar datos iniciales desde db.json
+# 3) Importar datos iniciales desde JSON legado (una sola vez)
 npm run db:import
 
-# 4) Levantar app usando PostgreSQL
-npm run dev:pg
-```
-
-### Volver temporalmente a JSON (rollback rápido)
-
-```bash
-unset DATABASE_URL
+# 4) Levantar app
 npm run dev
 ```
 
-Al no tener `DATABASE_URL`, el servidor vuelve automáticamente al modo `backend/data/db.json`.
+### Notas de migración desde JSON
+- `backend/data/db.json` queda como dataset legado para bootstrap/migración.
+- El runtime de la app no usa JSON como store principal.
 
 ## 🔐 Seguridad de cPanel
 

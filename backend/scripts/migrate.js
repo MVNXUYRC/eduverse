@@ -1,18 +1,14 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const { loadEnvFiles } = require('../config/load-env');
+const { createPgConnectionConfig } = require('../persistence/db-config');
 
-if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL no está definido.');
-  process.exit(1);
-}
+loadEnvFiles();
 
 async function main() {
   const { Pool } = require('pg');
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.PGSSL_DISABLE === 'true' ? false : { rejectUnauthorized: false },
-  });
+  const pool = new Pool(createPgConnectionConfig(process.env));
   const sqlPath = path.join(__dirname, '../persistence/schema.sql');
   const sql = fs.readFileSync(sqlPath, 'utf8');
   try {

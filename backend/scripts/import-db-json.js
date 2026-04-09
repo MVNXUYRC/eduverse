@@ -1,19 +1,18 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const { loadEnvFiles } = require('../config/load-env');
 const { PgStore } = require('../persistence/pg-store');
+const { createPgConnectionConfig } = require('../persistence/db-config');
 
-if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL no está definido.');
-  process.exit(1);
-}
+loadEnvFiles();
 
 async function main() {
   const input = process.argv[2] || path.join(__dirname, '../data/db.json');
   const raw = fs.readFileSync(input, 'utf8');
   const state = JSON.parse(raw);
 
-  const store = new PgStore(process.env.DATABASE_URL);
+  const store = new PgStore(createPgConnectionConfig(process.env));
   try {
     await store.runSchema();
     await store.saveState(state);

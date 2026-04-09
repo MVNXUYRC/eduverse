@@ -1,13 +1,9 @@
-const path = require('path');
-const { JsonStore } = require('./json-store');
 const { PgStore } = require('./pg-store');
+const { createPgConnectionConfig } = require('./db-config');
 
 function createStore() {
-  const dbUrl = process.env.DATABASE_URL;
-  if (dbUrl) {
-    return new PgStore(dbUrl);
-  }
-  return new JsonStore(path.join(__dirname, '../data/db.json'));
+  const connectionConfig = createPgConnectionConfig(process.env);
+  return new PgStore(connectionConfig);
 }
 
 module.exports = { createStore };
