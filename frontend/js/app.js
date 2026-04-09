@@ -14,15 +14,20 @@ const DISC_ICONS = {
   'Derecho': '⚖️', 'Ciencias Naturales': '🦋', 'Arte y Cultura': '🎭',
   'Ingeniería Forestal': '🌲', 'Letras': '📚',
 };
+const ALLOWED_DISCIPLINAS = ['Ciencias Sociales', 'Ciencias Aplicadas', 'Artes'];
 
 // ── Estado global ─────────────────────────────────────────
 const state = {
   page: 'home',
-  filters: { q: '', tipo: [], subtipo: [], disciplina: [], modalidad: [], unidad: [], regional: [], esCurso: null },
+  filters: { q: '', tipo: [], subtipo: [], disciplina: [], modalidad: [], unidad: [], regional: [], esCurso: null, inscripcionAbierta: null },
   results: [], meta: { total: 0, page: 1, totalPages: 1 },
   sort: 'nombre',
   loading: false,
 };
+const EMPTY_FILTERS = { q: '', tipo: [], subtipo: [], disciplina: [], modalidad: [], unidad: [], regional: [], esCurso: null, inscripcionAbierta: null };
+window._siteUnderConstruction = false;
+window._siteUnderConstructionImage = '/public/site-under-construction.svg';
+const PDF_VIEWERS = new Map();
 
 // ── Utilities ─────────────────────────────────────────────
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
@@ -39,7 +44,12 @@ window.showToast = showToast;
 
 // ── API ───────────────────────────────────────────────────
 async function apiFetch(path, opts = {}) {
-  const res = await fetch(API_BASE + path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const method = (opts.method || 'GET').toUpperCase();
+  let url = API_BASE + path;
+  if (method === 'GET') {
+    url += (url.includes('?') ? '&' : '?') + '_ts=' + Date.now();
+  }
+  const res = await fetch(url, { cache: 'no-store', headers: { 'Content-Type': 'application/json' }, ...opts });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -58,6 +68,7 @@ async function searchCareers(params = {}) {
   if (params.unidad?.length)    q.set('unidad',    params.unidad.join(','));
   if (params.regional?.length)  q.set('regional',  params.regional.join(','));
   if (params.esCurso !== null && params.esCurso !== undefined) q.set('esCurso', params.esCurso);
+  if (params.inscripcionAbierta !== null && params.inscripcionAbierta !== undefined) q.set('inscripcionAbierta', params.inscripcionAbierta);
   if (params.page)       q.set('page',       params.page);
   if (params.sort)       q.set('sort',       params.sort);
   return apiFetch(`/careers?${q}`);
@@ -79,17 +90,107 @@ function navigate(page, data = null) {
   const nl = document.getElementById(navId);
   if (nl) nl.classList.add('active');
   render();
+  syncHashRoute();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 window.navigate = navigate;
 
+function syncHashRoute() {
+  const base = window.location.pathname;
+  if (state.page === 'home') {
+    window.history.replaceState(null, '', base);
+    return;
+  }
+  if (state.page !== 'search') {
+    window.history.replaceState(null, '', `${base}#${state.page}`);
+    return;
+  }
+  const q = new URLSearchParams();
+  if (state.filters.q) q.set('q', state.filters.q);
+  if (state.filters.tipo?.length) q.set('tipo', state.filters.tipo.join(','));
+  if (state.filters.subtipo?.length) q.set('subtipo', state.filters.subtipo.join(','));
+  if (state.filters.disciplina?.length) q.set('disciplina', state.filters.disciplina.join(','));
+  if (state.filters.modalidad?.length) q.set('modalidad', state.filters.modalidad.join(','));
+  if (state.filters.unidad?.length) q.set('unidad', state.filters.unidad.join(','));
+  if (state.filters.regional?.length) q.set('regional', state.filters.regional.join(','));
+  if (state.filters.esCurso !== null && state.filters.esCurso !== undefined) q.set('esCurso', String(state.filters.esCurso));
+  if (state.filters.inscripcionAbierta !== null && state.filters.inscripcionAbierta !== undefined) q.set('inscripcionAbierta', String(state.filters.inscripcionAbierta));
+  if (state.meta.page > 1) q.set('page', String(state.meta.page));
+  const qs = q.toString();
+  window.history.replaceState(null, '', `${base}#search${qs ? `?${qs}` : ''}`);
+}
+
+function hydrateRouteFromHash() {
+  const raw = (window.location.hash || '').replace(/^#/, '');
+  if (!raw) return 'home';
+  const [pageRaw, qsRaw = ''] = raw.split('?');
+  const page = pageRaw || 'home';
+  const allowed = new Set(['home', 'search', 'quienes', 'contacto', 'unidades', 'admin']);
+  if (!allowed.has(page)) return 'home';
+  if (page !== 'search') return page;
+
+  const params = new URLSearchParams(qsRaw);
+  const csv = key => (params.get(key) || '').split(',').map(v => v.trim()).filter(Boolean);
+  const esCursoRaw = params.get('esCurso');
+  const pageNum = parseInt(params.get('page') || '1', 10);
+  state.filters = {
+    ...EMPTY_FILTERS,
+    q: params.get('q') || '',
+    tipo: csv('tipo'),
+    subtipo: csv('subtipo'),
+    disciplina: csv('disciplina'),
+    modalidad: csv('modalidad'),
+    unidad: csv('unidad'),
+    regional: csv('regional'),
+    esCurso: esCursoRaw === null ? null : esCursoRaw === 'true',
+    inscripcionAbierta: params.get('inscripcionAbierta') === null ? null : params.get('inscripcionAbierta') === 'true',
+  };
+  state.meta.page = Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1;
+  return 'search';
+}
+
 function render() {
   const app = document.getElementById('app');
-  const pages = { home: renderHome, search: renderSearch, admin: renderAdmin };
+  applySiteConstructionChrome(window._siteUnderConstruction === true);
+  if (window._siteUnderConstruction) {
+    renderSiteConstruction(app);
+    return;
+  }
+  const pages = { home: renderHome, search: renderSearch, admin: renderAdmin, unidades: renderUnidades };
   const placeholders = ['quienes', 'contacto'];
   if (pages[state.page]) pages[state.page](app);
   else if (placeholders.includes(state.page)) renderPlaceholder(app, state.page);
   else renderHome(app);
+}
+
+function renderSiteConstruction(app) {
+  const image = window._siteUnderConstructionImage || '/public/site-under-construction.svg';
+  app.innerHTML = `
+    <section style="padding-top:calc(var(--nav-height) + 34px);min-height:78vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#f8fdff 0%,#eef8fc 100%)">
+      <div style="width:100%;max-width:980px;padding:0 clamp(16px,4vw,48px);text-align:center">
+        <img src="${image}" alt="Sitio en construcción" style="max-width:min(640px,100%);height:auto;margin:0 auto 8px;display:block;filter:drop-shadow(0 10px 26px rgba(0,163,224,.08))" onerror="this.style.display='none'" />
+        <p style="font-size:.98rem;line-height:1.8;color:var(--text-secondary);max-width:760px;margin:0 auto">Estamos actualizando contenidos para ofrecerte una mejor experiencia. El sitio está disponible y volverá a su funcionamiento habitual muy pronto.</p>
+      </div>
+    </section>
+    ${constructionFooterHTML()}`;
+}
+
+function constructionFooterHTML() {
+  return `
+    <footer class="footer" style="padding:18px clamp(16px,4vw,48px);border-top:1px solid var(--border);background:#fff">
+      <div class="footer-inner">
+        <div class="footer-bottom" style="border-top:none;padding-top:0;justify-content:flex-start">
+          <span class="footer-copy">© 2026 Universidad Nacional de Misiones</span>
+        </div>
+      </div>
+    </footer>`;
+}
+
+function applySiteConstructionChrome(enabled) {
+  const navLinks = document.getElementById('nav-links');
+  const navRight = document.querySelector('.nav-right');
+  if (navLinks) navLinks.style.display = enabled ? 'none' : '';
+  if (navRight) navRight.style.display = enabled ? 'none' : '';
 }
 
 // ── HOME ──────────────────────────────────────────────────
@@ -101,21 +202,22 @@ async function renderHome(app) {
     // Update hero stats dynamically
     if (data.stats) {
       const s = data.stats;
-      const total = document.getElementById('stat-total');
-      const fac   = document.getElementById('stat-fac');
-      const reg   = document.getElementById('stat-reg');
-      const virt  = document.getElementById('stat-virt-item');
-      const facIt = document.getElementById('stat-fac-item');
-      if (total) total.textContent = s.total || '0';
-      if (fac)   fac.textContent   = s.facultades || '0';
-      if (reg)   reg.textContent   = s.regionales || '0';
-      if (facIt) facIt.style.display = s.facultades > 0 ? '' : 'none';
-      if (virt)  virt.style.display  = s.tiene100Virtual ? '' : 'none';
+      const elCarreras = document.getElementById('stat-carreras');
+      const elCursos   = document.getElementById('stat-cursos');
+      const fac        = document.getElementById('stat-fac');
+      const reg        = document.getElementById('stat-reg');
+      const virt       = document.getElementById('stat-virt-item');
+      const facIt      = document.getElementById('stat-fac-item');
+      if (elCarreras) elCarreras.textContent = s.carreras ?? '0';
+      if (elCursos)   elCursos.textContent   = s.cursos   ?? '0';
+      if (fac)        fac.textContent        = s.facultades || '0';
+      if (reg)        reg.textContent        = s.regionales || '0';
+      if (facIt)      facIt.style.display    = s.facultades > 0 ? '' : 'none';
+      if (virt)       virt.style.display     = s.tiene100Virtual ? '' : 'none';
     }
-    // Sections: 0. Inscripción abierta 1. Cursos 2. Nuevas 3. Disciplinas
+    // Sections: inscripciones abiertas → nuevas → disciplinas
     document.getElementById('featured-sections').innerHTML =
       inscripcionSection(data.inscripcionAbierta) +
-      cursosSection(data.cursos) +
       nuevasSection(data.nuevas) +
       disciplinasSection(data.disciplinas);
     setupCardClicks();
@@ -124,7 +226,7 @@ async function renderHome(app) {
     const hintsBar = document.getElementById('hero-hints');
     if (hintsBar && data.disciplinas?.length) {
       const top5 = data.disciplinas.slice(0,5);
-      hintsBar.innerHTML = '<span>Búsquedas frecuentes:</span>' +
+      hintsBar.innerHTML = '<span>Probá con:</span>' +
         top5.map(d => `<span class="search-hint-tag" data-q="${d.nombre}">${d.nombre}</span>`).join('');
       document.querySelectorAll('.search-hint-tag').forEach(t => t.addEventListener('click', () => {
         state.filters = { q: t.dataset.q || '', tipo: [], subtipo: [], disciplina: [], modalidad: [], unidad: [], regional: [], esCurso: null };
@@ -147,15 +249,18 @@ function heroHTML() {
     <div class="hero-content">
       <div class="hero-badge"><span class="hero-badge-dot"></span>Universidad Nacional de Misiones</div>
       <h1 class="hero-title">Educación a <span class="highlight">Distancia</span></h1>
-      <p class="hero-subtitle">Explorá carreras de grado, pregrado, posgrado y cursos de la UNaM en modalidad virtual e híbrida.</p>
+      <p class="hero-subtitle">Encontrá propuestas de forma simple y rápida, y empezá a explorar tus intereses para descubrir todas las oportunidades que te esperan..</p>
       <div class="search-wrapper">
         <div class="search-box" id="hero-search-box">
           <span class="search-icon">🔍</span>
-          <input type="text" class="search-input" id="hero-search-input" placeholder="Buscar carrera, disciplina, palabras clave..." autocomplete="off" />
-          <button class="search-btn" id="hero-search-btn">Buscar</button>
+          <input type="text" class="search-input" id="hero-search-input" aria-label="Buscar propuesta académica" placeholder="Buscar carrera, disciplina, palabras clave y más.." autocomplete="off" />
+          <button class="search-btn" id="hero-search-btn" aria-label="Buscar propuestas">Buscar</button>
+        </div>
+        <div class="hero-cta-row">
+          <button class="search-btn-secondary" id="hero-browse-btn" aria-label="Ver toda la oferta académica">Ver toda la oferta</button>
         </div>
         <div class="search-hints" id="hero-hints">
-          <span>Búsquedas frecuentes:</span>
+          <span>Probá con:</span>
           <span class="search-hint-tag" data-q="Licenciatura">Licenciaturas</span>
           <span class="search-hint-tag" data-q="Maestría">Maestrías</span>
           <span class="search-hint-tag" data-q="Tecnicatura">Tecnicaturas</span>
@@ -164,7 +269,8 @@ function heroHTML() {
         </div>
       </div>
       <div class="stats-bar" id="hero-stats-bar">
-        <div class="stat-item"><div class="stat-value" id="stat-total">—</div><div class="stat-label">Propuestas</div></div>
+        <div class="stat-item"><div class="stat-value" id="stat-carreras">—</div><div class="stat-label">Carreras</div></div>
+        <div class="stat-item"><div class="stat-value" id="stat-cursos">—</div><div class="stat-label">Cursos</div></div>
         <div class="stat-item" id="stat-fac-item"><div class="stat-value" id="stat-fac">—</div><div class="stat-label">Facultades</div></div>
         <div class="stat-item"><div class="stat-value" id="stat-reg">—</div><div class="stat-label">Regionales</div></div>
         <div class="stat-item" id="stat-virt-item" style="display:none"><div class="stat-value">100<span>%</span></div><div class="stat-label">Virtual disponible</div></div>
@@ -194,8 +300,7 @@ function inscripcionSection(items) {
   if (!items?.length) return '';
   return `<section class="section" style="padding-top:0"><div class="section-inner">
     <div class="section-header">
-      <div><div class="section-label" style="color:var(--unam-green)">Inscripción abierta</div><h2 class="section-title">Propuestas con inscripción abierta</h2></div>
-      <a class="section-link" onclick="navigate('search')">Ver toda la oferta →</a>
+      <div><div class="section-label" style="color:var(--unam-cyan)">propuestas disponibles</div><h2 class="section-title">¡Inscripciones abiertas!</h2></div>
     </div>
     <div class="cards-grid animate-in">${items.map(c => careerCard(c)).join('')}</div>
   </div></section>`;
@@ -216,8 +321,7 @@ function nuevasSection(nuevas) {
   if (!nuevas?.length) return '';
   return `<section class="section" style="padding-top:0"><div class="section-inner">
     <div class="section-header">
-      <div><div class="section-label">Incorporadas recientemente</div><h2 class="section-title">Nuevas propuestas académicas</h2></div>
-      <a class="section-link" onclick="navigate('search')">Ver toda la oferta →</a>
+      <div><div class="section-label">Incorporadas recientemente</div><h2 class="section-title">¡Nuevas propuestas!</h2></div>
     </div>
     <div class="cards-grid animate-in">${nuevas.map(c => careerCard(c)).join('')}</div>
   </div></section>`;
@@ -242,25 +346,39 @@ function skeletonSections() {
 
 // ── CAREER CARD ───────────────────────────────────────────
 function careerCard(c) {
+  const evalState = (s, defaultVal = true) => {
+    if (s === undefined || s === null) return defaultVal;
+    if (typeof s === 'boolean') return s;
+    const v = s.valor !== undefined ? s.valor : s.activo;
+    if (!v) return false;
+    if (!s.fechaHasta) return true;
+    const raw = String(s.fechaHasta || '').trim();
+    if (!raw) return true;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return new Date(`${raw}T23:59:59.999`) > new Date();
+    return new Date(raw) > new Date();
+  };
   const tipoLabel = c.esCurso ? 'Curso' : (c.tipo || 'Carrera');
   const tipoClass = tipoLabel.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const nuevaBadge = c.nueva ? `<span class="badge badge-nueva">Nuevo</span>` : '';
-  const cursoBadge = c.esCurso ? `<span class="badge badge-curso">Curso</span>` : '';
+  const _activo = evalState(c._activo !== undefined ? c._activo : c.activo, true);
+  const finalizadaBadge = !_activo ? `<span class="badge badge-finalizada">${c.esCurso ? 'Finalizado' : 'Finalizada'}</span>` : '';
   // Handle both old boolean and new object format
   const _inscAbierta = c.inscripcionAbierta
     ? (typeof c.inscripcionAbierta==='object'
         ? (c.inscripcionAbierta.valor && (!c.inscripcionAbierta.fechaHasta || new Date(c.inscripcionAbierta.fechaHasta)>new Date()))
         : c.inscripcionAbierta)
     : false;
-  const inscBadge = _inscAbierta ? `<span class="badge badge-nueva" style="background:rgba(58,170,53,.1);color:var(--unam-green)">Inscripción abierta</span>` : '';
+  const inscBadge = _inscAbierta ? '<span class="badge badge-inscripcion">Inscripción abierta</span>' : '';
   return `
   <div class="career-card card-animate" data-id="${c.id}">
     <div class="card-top">
       <div class="card-badges">
-        <span class="badge badge-tipo ${tipoClass}">${tipoLabel}</span>
-        ${c.subtipo ? `<span class="badge badge-tipo posgrado">${c.subtipo}</span>` : ''}
-        <span class="badge badge-modalidad">${c.modalidad}</span>
-        ${nuevaBadge}${cursoBadge}${inscBadge}
+        <div class="card-badges-main">
+          <span class="badge badge-tipo ${tipoClass}">${tipoLabel}</span>
+          ${c.subtipo ? `<span class="badge badge-tipo posgrado">${c.subtipo}</span>` : ''}
+          <span class="badge badge-modalidad">${c.modalidad}</span>
+        </div>
+        ${(finalizadaBadge || nuevaBadge || inscBadge) ? `<div class="card-badges-state">${finalizadaBadge}${nuevaBadge}${inscBadge}</div>` : ''}
       </div>
     </div>
     <h3 class="card-title">${c.nombre}</h3>
@@ -298,9 +416,8 @@ async function renderSearch(app) {
   app.innerHTML = `
   <div class="search-page">
     <div class="search-page-header">
-      <div class="section-label">🔍 Buscador</div>
-      <h1 class="search-page-title">Carreras y Cursos</h1>
-      <p class="search-page-sub">Filtrá por tipo, disciplina, modalidad, unidad académica y más.</p>
+      <h1 class="search-page-title">Propuestas Formativas</h1>
+      <p class="search-page-sub">Explorá toda la oferta de Educación a Distancia: carreras, posgrados y cursos. Filtrá por tipo, disciplina, modalidad, unidad académica y más..</p>
       <div class="search-bar-full">
         <div class="search-box" id="main-search-box">
           <span class="search-icon">🔍</span>
@@ -320,6 +437,15 @@ async function renderSearch(app) {
         <div class="filters-header">
           <h3 class="filters-title">Filtros</h3>
           <span class="filters-clear" id="clear-filters">Limpiar</span>
+        </div>
+        <div class="filter-group">
+          <div class="filter-label">Estado de inscripción</div>
+          <div class="filter-options">
+            <label class="filter-option">
+              <input type="checkbox" id="filter-inscripcion-abierta" ${state.filters.inscripcionAbierta === true ? 'checked' : ''} />
+              <span class="filter-option-label">Con inscripciones abiertas</span>
+            </label>
+          </div>
         </div>
         <div id="filter-groups"><div class="skeleton skeleton-line" style="width:100%;height:12px;margin-bottom:8px"></div>
         <div class="skeleton skeleton-line" style="width:80%;height:12px"></div></div>
@@ -356,7 +482,7 @@ async function renderSearch(app) {
 }
 
 function setTab(val) {
-  state.filters.esCurso = val;
+  state.filters = { ...EMPTY_FILTERS, esCurso: val };
   state.meta.page = 1;
   navigate('search');
 }
@@ -394,6 +520,14 @@ function renderFilterGroups(fd) {
       debouncedSearch();
     });
   });
+
+  const inscOpenCb = document.getElementById('filter-inscripcion-abierta');
+  inscOpenCb?.addEventListener('change', () => {
+    state.filters.inscripcionAbierta = inscOpenCb.checked ? true : null;
+    state.meta.page = 1;
+    renderActiveFilters();
+    debouncedSearch();
+  });
 }
 
 function renderActiveFilters() {
@@ -405,10 +539,21 @@ function renderActiveFilters() {
       chips.push(`<span class="filter-chip" onclick="removeFilter('${key}','${val}')">${val} <span class="filter-chip-remove">✕</span></span>`);
     });
   });
+  if (state.filters.inscripcionAbierta === true) {
+    chips.push(`<span class="filter-chip" onclick="removeFilter('inscripcionAbierta','true')">Inscripciones abiertas <span class="filter-chip-remove">✕</span></span>`);
+  }
   bar.innerHTML = chips.length ? `<div class="active-filters">${chips.join('')}</div>` : '';
 }
 
 function removeFilter(key, val) {
+  if (key === 'inscripcionAbierta') {
+    state.filters.inscripcionAbierta = null;
+    const cb = document.getElementById('filter-inscripcion-abierta');
+    if (cb) cb.checked = false;
+    renderActiveFilters();
+    debouncedSearch();
+    return;
+  }
   state.filters[key] = (state.filters[key] || []).filter(v => v !== val);
   document.querySelectorAll(`[data-filter="${key}"]`).forEach(cb => { if (cb.value === val) cb.checked = false; });
   renderActiveFilters();
@@ -431,7 +576,10 @@ async function doSearch() {
   } catch {
     if (grid) grid.innerHTML = `<div class="state-container" style="grid-column:1/-1">
       <div class="state-icon">⚠️</div><div class="state-title">Error al buscar</div></div>`;
-  } finally { state.loading = false; }
+  } finally {
+    state.loading = false;
+    if (state.page === 'search') syncHashRoute();
+  }
 }
 
 const debouncedSearch = debounce(doSearch, DEBOUNCE_MS);
@@ -490,10 +638,12 @@ function setupClearFilters() {
   const btn = document.getElementById('clear-filters');
   if (!btn) return;
   btn.addEventListener('click', () => {
-    state.filters = { q: '', tipo: [], subtipo: [], disciplina: [], modalidad: [], unidad: [], regional: [], esCurso: null };
+    state.filters = { ...EMPTY_FILTERS };
     const inp = document.getElementById('main-search-input');
     if (inp) inp.value = '';
     document.querySelectorAll('[data-filter]').forEach(cb => cb.checked = false);
+    const inscOpenCb = document.getElementById('filter-inscripcion-abierta');
+    if (inscOpenCb) inscOpenCb.checked = false;
     renderActiveFilters();
     state.meta.page = 1;
     doSearch();
@@ -516,25 +666,34 @@ function setupMobileFiltersToggle() {
 function setupHeroSearch() {
   const inp  = document.getElementById('hero-search-input');
   const btn  = document.getElementById('hero-search-btn');
+  const browseBtn = document.getElementById('hero-browse-btn');
   const tags = document.querySelectorAll('.search-hint-tag');
 
   const go = q => {
-    state.filters = { q: q || '', tipo: [], subtipo: [], disciplina: [], modalidad: [], unidad: [], regional: [], esCurso: null };
+    state.filters = { ...EMPTY_FILTERS, q: q || '' };
     state.meta.page = 1;
     navigate('search');
   };
 
   btn?.addEventListener('click', () => go(inp?.value));
+  browseBtn?.addEventListener('click', () => go(''));
   inp?.addEventListener('keydown', e => { if (e.key === 'Enter') go(inp.value); });
   tags.forEach(t => t.addEventListener('click', () => { go(t.dataset.q); }));
 }
 
 function filterByCurso() {
-  state.filters = { q: '', tipo: [], subtipo: [], disciplina: [], modalidad: [], unidad: [], regional: [], esCurso: true };
+  state.filters = { ...EMPTY_FILTERS, esCurso: true };
   state.meta.page = 1;
   navigate('search');
 }
 window.filterByCurso = filterByCurso;
+
+function filterByTipo(tipo) {
+  state.filters = { ...EMPTY_FILTERS, tipo: [tipo], esCurso: false };
+  state.meta.page = 1;
+  navigate('search');
+}
+window.filterByTipo = filterByTipo;
 
 // ── CARD CLICKS ───────────────────────────────────────────
 function setupCardClicks() {
@@ -550,7 +709,7 @@ function setupCardClicks() {
 function setupDiscClicks() {
   document.querySelectorAll('.disc-card').forEach(card => {
     card.addEventListener('click', () => {
-      state.filters = { q: '', tipo: [], subtipo: [], disciplina: [card.dataset.disc], modalidad: [], unidad: [], regional: [], esCurso: null };
+      state.filters = { ...EMPTY_FILTERS, disciplina: [card.dataset.disc] };
       state.meta.page = 1;
       navigate('search');
     });
@@ -559,6 +718,10 @@ function setupDiscClicks() {
 
 // ── DETAIL PAGE ───────────────────────────────────────────
 async function openDetail(id) {
+  if (window._siteUnderConstruction) {
+    navigate('home');
+    return;
+  }
   const app = document.getElementById('app');
   app.innerHTML = `<div class="detail-page"><div class="detail-hero" style="padding-top:calc(var(--nav-height) + 44px)">
     <div class="detail-inner">${skeletonCards(1)}</div></div></div>${footerHTML()}`;
@@ -576,18 +739,27 @@ function renderDetail(c, app) {
     const v = s.valor !== undefined ? s.valor : s.activo;
     if (!v) return false;
     if (!s.fechaHasta) return true;
-    return new Date(s.fechaHasta) > new Date();
+    const raw = String(s.fechaHasta || '').trim();
+    if (!raw) return true;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return new Date(`${raw}T23:59:59.999`) > new Date();
+    return new Date(raw) > new Date();
   }
   const _activo      = evalState(c._activo !== undefined ? c._activo : c.activo);
   const _inscAbierta = evalState(c._inscripcionAbierta !== undefined ? c._inscripcionAbierta : c.inscripcionAbierta);
-  const unidadesStr  = (c.unidadesAcademicas || [c.unidadAcademica]).filter(Boolean).join(', ');
+  const EAD_UNIT = 'Educación a Distancia';
+  const unidadesRaw = [...new Set((c.unidadesAcademicas || [c.unidadAcademica]).filter(Boolean))];
+  const unidadesOrdered = (unidadesRaw.includes(EAD_UNIT) && unidadesRaw.length > 1)
+    ? [EAD_UNIT, ...unidadesRaw.filter(u => u !== EAD_UNIT)]
+    : unidadesRaw;
+  const showUnidadAcademica = !(unidadesOrdered.length === 1 && unidadesOrdered[0] === EAD_UNIT);
+  const unidadesStr  = unidadesOrdered.join(', ');
   const tipoLabel    = c.esCurso ? 'Curso' : (c.tipo || 'Carrera');
 
   // ── Badge markup ──────────────────────────────────────
   const finalizadaBanner = !_activo
-    ? '<div style="display:inline-flex;align-items:center;gap:8px;padding:7px 14px;background:rgba(143,163,177,.15);border:1px solid rgba(143,163,177,.3);border-radius:100px;margin-bottom:14px;font-size:.83rem;font-weight:600;color:var(--text-muted)">Propuesta finalizada</div>'
+    ? '<div style="display:inline-flex;align-items:center;gap:8px;padding:7px 14px;background:rgba(220,38,38,.09);border:1px solid rgba(220,38,38,.28);border-radius:100px;margin-bottom:14px;font-size:.83rem;font-weight:700;color:#b42318">' + (c.esCurso ? 'Finalizado' : 'Finalizada') + '</div>'
     : '';
-  const inscBadge = _inscAbierta ? '<span class="badge badge-nueva" style="background:rgba(58,170,53,.1);color:#3AAA35">Inscripción abierta</span>' : '';
+  const inscBadge = _inscAbierta ? '<span class="badge badge-inscripcion">Inscripción abierta</span>' : '';
   const nuevaBadge = c.nueva ? '<span class="badge badge-nueva">Nuevo</span>' : '';
   const subtipoBadge = c.subtipo ? '<span class="badge" style="background:rgba(125,78,36,.1);color:#7D4E24;padding:3px 10px;border-radius:100px;font-size:.75rem;font-weight:600">' + c.subtipo + '</span>' : '';
 
@@ -595,6 +767,20 @@ function renderDetail(c, app) {
   const duracionCard   = c.duracion   ? '<div class="detail-meta-card"><div class="detail-meta-label">Duración</div><div class="detail-meta-value">' + c.duracion + '</div></div>' : '';
   const disciplinaCard = c.disciplina ? '<div class="detail-meta-card"><div class="detail-meta-label">Disciplina</div><div class="detail-meta-value">' + c.disciplina + '</div></div>' : '';
   const regionalCard   = c.regional   ? '<div class="detail-meta-card"><div class="detail-meta-label">Regional</div><div class="detail-meta-value">' + c.regional + '</div></div>' : '';
+  const docsSectionHtml = (c.documentos?.length)
+    ? '<div style="display:flex;flex-direction:column;gap:12px">' +
+      c.documentos.map((d) => {
+        let row = '<div style="display:flex;align-items:flex-start;gap:16px;padding:16px 20px;background:#fff;border:1px solid var(--border-card);border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.04)">';
+        row += '<div style="width:40px;height:40px;background:rgba(125,78,36,.08);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.2rem">📋</div>';
+        row += '<div style="flex:1">';
+        row += '<div style="font-weight:700;font-size:.92rem;margin-bottom:3px">' + d.tipo + (d.organismo ? ' — ' + d.organismo : '') + '</div>';
+        if (d.numero || d.anio) row += '<div style="font-size:.85rem;color:var(--text-muted);margin-bottom:6px">N° ' + [d.numero, d.anio].filter(Boolean).join(' / ') + '</div>';
+        if (d.pdf) row += '<a href="' + d.pdf + '" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:.83rem;color:var(--unam-cyan);font-weight:600;text-decoration:none">Ver documento PDF →</a>';
+        row += '</div></div>';
+        return row;
+      }).join('') +
+      '</div>'
+    : '<div class="detail-section"><p style="color:var(--text-muted);font-size:.95rem">No se cargaron documentos administrativos para esta propuesta.</p></div>';
 
   // ── TAB 1: Descripción ────────────────────────────────
   let tab1 = '';
@@ -602,8 +788,23 @@ function renderDetail(c, app) {
   tab1 += '<div style="font-size:1.02rem;color:var(--text-secondary);line-height:1.85">' + (c.descripcion || '') + '</div>';
   tab1 += '</div>';
   // Unidad académica
-  tab1 += '<div class="detail-section"><div class="detail-section-title">Unidad académica</div>';
-  tab1 += '<p style="color:var(--text-secondary);font-size:.95rem">' + unidadesStr + '</p></div>';
+  if (showUnidadAcademica) {
+    tab1 += '<div class="detail-section"><div class="detail-section-title">Unidad académica</div>';
+    tab1 += '<p style="color:var(--text-secondary);font-size:.95rem">' + unidadesStr + '</p></div>';
+  }
+  // Disertantes
+  if (c.disertantes?.length) {
+    const properName = (n) => String(n || '')
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .map(p => p.charAt(0).toUpperCase() + p.slice(1))
+      .join(' ');
+    tab1 += '<div class="detail-section"><div class="detail-section-title">Disertantes</div>';
+    tab1 += '<ul style="margin:0;padding-left:20px;color:var(--text-secondary);font-size:.95rem;line-height:1.8">';
+    tab1 += c.disertantes.map(d => '<li>' + properName(d) + '</li>').join('');
+    tab1 += '</ul></div>';
+  }
   // Contacto
   if (c.contacto || c.telefonoContacto) {
     tab1 += '<div class="detail-section"><div class="detail-section-title">Contacto</div>';
@@ -632,12 +833,11 @@ function renderDetail(c, app) {
   } else {
     tab2 += '<div class="detail-section"><p style="font-size:.95rem;color:var(--text-muted)">No se cargaron requisitos de admisión para esta propuesta.</p></div>';
   }
-  // Disertantes (para cursos)
-  if (c.esCurso && c.disertantes?.length) {
-    tab2 += '<div class="detail-section"><div class="detail-section-title">Disertantes</div>';
-    tab2 += '<div class="tags-list">' + c.disertantes.map(d => '<span class="tag">' + d + '</span>').join('') + '</div></div>';
+  if (c.documentos?.length) {
+    tab2 += '<div class="detail-section"><div class="detail-section-title">Documentación</div>';
+    tab2 += docsSectionHtml;
+    tab2 += '</div>';
   }
-
   // ── TAB 3: Plan / Programa ────────────────────────────
   let tab3 = '';
   if (c.esCurso) {
@@ -652,16 +852,33 @@ function renderDetail(c, app) {
   } else {
     // Carreras: plan de estudios con visor PDF
     if (c.planEstudiosPDF) {
-      // PDF viewer: no download, no print
       const pdfId = 'pdf-viewer-' + c.id;
-      const pdfBtn = 'togglePdfFull("' + pdfId + '")';
+      const safePdfUrl = String(c.planEstudiosPDF || '').replace(/"/g, '&quot;');
       tab3 += '<div style="width:100%;border:0.5px solid var(--border);border-radius:8px;margin-bottom:16px">';
       tab3 += '<div style="padding:8px 14px;background:var(--bg-surface);border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between">';
       tab3 += '<span style="font-size:.82rem;color:var(--text-muted);font-weight:600">Plan de estudios</span>';
-      tab3 += '<button onclick="' + pdfBtn + '" style="font-size:.78rem;padding:3px 10px;background:rgba(0,163,224,.08);border:1px solid rgba(0,163,224,.2);border-radius:5px;color:var(--unam-cyan);cursor:pointer" id="' + pdfId + '-btn">⛶ Expandir</button>';
+      tab3 += '<div style="display:flex;align-items:center;gap:8px">';
+      tab3 += '<a href="' + c.planEstudiosPDF + '" target="_blank" rel="noopener noreferrer" style="font-size:.78rem;padding:3px 10px;background:rgba(0,163,224,.08);border:1px solid rgba(0,163,224,.2);border-radius:5px;color:var(--unam-cyan);cursor:pointer;text-decoration:none">Abrir PDF</a>';
+      tab3 += '<button onclick="togglePdfFull(\'' + pdfId + '\')" style="font-size:.78rem;padding:3px 10px;background:rgba(0,163,224,.08);border:1px solid rgba(0,163,224,.2);border-radius:5px;color:var(--unam-cyan);cursor:pointer" id="' + pdfId + '-btn">⛶ Expandir</button>';
       tab3 += '</div>';
-      tab3 += '<iframe id="' + pdfId + '" src="' + c.planEstudiosPDF + '" style="width:100%;height:520px;border:none;display:block;transition:height .3s ease" title="Plan de estudios" onload="checkPdfLoad(this)" onerror="showPdfError(this)"></iframe>';
-      tab3 += '<div id="' + pdfId + '-err" style="display:none;padding:24px;text-align:center;color:var(--text-muted);font-size:.9rem">No se pudo cargar el PDF en el visor. <a href="' + c.planEstudiosPDF + '" target="_blank" style="color:var(--unam-cyan)">Descargar archivo</a></div>';
+      tab3 += '</div>';
+      tab3 += '<div id="' + pdfId + '" data-pdf-viewer="1" data-pdf-url="' + safePdfUrl + '" style="width:100%;height:520px;display:flex;flex-direction:column;transition:height .3s ease">';
+      tab3 += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--bg-elevated)">';
+      tab3 += '<div style="display:flex;align-items:center;gap:8px">';
+      tab3 += '<button onclick="pdfPrev(\'' + pdfId + '\')" id="' + pdfId + '-prev" style="font-size:.78rem;padding:4px 10px;border:1px solid var(--border);border-radius:5px;background:#fff;cursor:pointer" disabled>←</button>';
+      tab3 += '<button onclick="pdfNext(\'' + pdfId + '\')" id="' + pdfId + '-next" style="font-size:.78rem;padding:4px 10px;border:1px solid var(--border);border-radius:5px;background:#fff;cursor:pointer" disabled>→</button>';
+      tab3 += '<span id="' + pdfId + '-page" style="font-size:.8rem;color:var(--text-muted);min-width:74px;text-align:center">0 / 0</span>';
+      tab3 += '</div>';
+      tab3 += '<div style="display:flex;align-items:center;gap:8px">';
+      tab3 += '<button onclick="pdfZoom(\'' + pdfId + '\', -0.15)" style="font-size:.78rem;padding:4px 10px;border:1px solid var(--border);border-radius:5px;background:#fff;cursor:pointer">−</button>';
+      tab3 += '<button onclick="pdfZoom(\'' + pdfId + '\', 0.15)" style="font-size:.78rem;padding:4px 10px;border:1px solid var(--border);border-radius:5px;background:#fff;cursor:pointer">+</button>';
+      tab3 += '</div>';
+      tab3 += '</div>';
+      tab3 += '<div style="flex:1;overflow:auto;background:#f3f6f8;display:flex;justify-content:center;align-items:flex-start;padding:12px">';
+      tab3 += '<canvas id="' + pdfId + '-canvas" style="max-width:100%;height:auto;background:#fff;border:1px solid var(--border);box-shadow:0 2px 12px rgba(0,0,0,.08)"></canvas>';
+      tab3 += '</div>';
+      tab3 += '<div id="' + pdfId + '-err" style="display:none;padding:12px 16px;text-align:center;color:var(--text-muted);font-size:.9rem;border-top:1px solid var(--border)">No se pudo cargar el PDF. <a href="' + c.planEstudiosPDF + '" target="_blank" style="color:var(--unam-cyan)">Abrir archivo</a></div>';
+      tab3 += '</div>';
       tab3 += '</div>';
     }
     if (c.planEstudios?.length) {
@@ -676,29 +893,36 @@ function renderDetail(c, app) {
 
   // ── TAB 4: Resoluciones ───────────────────────────────
   let tab4 = '';
-  if (c.documentos?.length) {
-    tab4 += '<div style="display:flex;flex-direction:column;gap:12px">';
-    c.documentos.forEach(d => {
-      tab4 += '<div style="display:flex;align-items:flex-start;gap:16px;padding:16px 20px;background:#fff;border:1px solid var(--border-card);border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.04)">';
-      tab4 += '<div style="width:40px;height:40px;background:rgba(125,78,36,.08);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.2rem">📋</div>';
-      tab4 += '<div style="flex:1">';
-      tab4 += '<div style="font-weight:700;font-size:.92rem;margin-bottom:3px">' + d.tipo + (d.organismo ? ' — ' + d.organismo : '') + '</div>';
-      if (d.numero || d.anio) tab4 += '<div style="font-size:.85rem;color:var(--text-muted);margin-bottom:6px">N° ' + [d.numero, d.anio].filter(Boolean).join(' / ') + '</div>';
-      if (d.pdf) tab4 += '<a href="' + d.pdf + '" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:.83rem;color:var(--unam-cyan);font-weight:600;text-decoration:none">Ver documento PDF →</a>';
-      tab4 += '</div></div>';
-    });
-    tab4 += '</div>';
-  } else {
-    tab4 += '<div class="detail-section"><p style="color:var(--text-muted);font-size:.95rem">No se cargaron documentos administrativos para esta propuesta.</p></div>';
-  }
+  tab4 += docsSectionHtml;
 
   // ── Tab dots (show only if content) ──────────────────
-  const hasRequisitos = !!(c.requisitosTexto || c.requisitos?.length || (c.esCurso && c.disertantes?.length));
+  const hasRequisitos = !!(c.requisitosTexto || c.requisitos?.length);
   const hasPlan = !!(c.esCurso ? c.programa : (c.planEstudios?.length || c.planEstudiosPDF));
   const hasDocs = !!(c.documentos?.length);
   const tab3Label = c.esCurso ? 'Programa' : 'Plan de estudios';
+  const hasInscForm = !!(c.formularioInscripcion);
+  const inscFecha = c.inscripcionAbierta?.fechaHasta || null;
   const inactiveNote = !_activo ? '<div style="margin-top:28px;padding:18px 22px;background:rgba(143,163,177,.07);border:1px solid rgba(143,163,177,.2);border-radius:12px"><p style="font-size:.9rem;color:var(--text-muted);margin-bottom:10px">Esta propuesta ya no está activa. Para consultas podés contactarnos:</p><a href="mailto:ead@unam.edu.ar" style="color:var(--unam-cyan);font-weight:600;font-size:.93rem">ead@unam.edu.ar</a></div>' : '';
 
+  // ── TAB Inscripción (solo si tiene formulario) ────────────
+  const tabInsc = hasInscForm ? (() => {
+    const fechaStr = inscFecha
+      ? new Date(inscFecha).toLocaleDateString('es-AR', {day:'2-digit',month:'long',year:'numeric'})
+      : null;
+    let html = '<div class="detail-section" style="border:none;padding:0 0 24px">';
+    if (fechaStr) {
+      html += `<p style="font-size:1rem;color:var(--text-primary);margin-bottom:20px">
+        La inscripción al curso <strong>${c.nombre}</strong> estará disponible hasta el <strong style="color:var(--unam-green)">${fechaStr}</strong>.
+      </p>`;
+    }
+    html += `<a href="${c.formularioInscripcion}" target="_blank" style="display:inline-flex;align-items:center;gap:10px;padding:14px 24px;background:var(--unam-cyan);color:#fff;font-weight:700;font-size:.95rem;border-radius:10px;text-decoration:none">
+      Acceder al formulario →
+    </a>`;
+    html += '</div>';
+    return html;
+  })() : '';
+
+  const inscTabIdx = 4;
   app.innerHTML = `
   <div class="detail-page">
     <div class="detail-hero">
@@ -725,18 +949,22 @@ function renderDetail(c, app) {
 
     <div class="detail-tabs-bar">
       <button class="detail-tab active" onclick="switchTab(0, this)">Descripción</button>
-      <button class="detail-tab" onclick="switchTab(1, this)">Requisitos${hasRequisitos ? '' : ''}</button>
-      <button class="detail-tab" onclick="switchTab(2, this)">${tab3Label}${hasPlan ? '' : ''}</button>
-      <button class="detail-tab" onclick="switchTab(3, this)">Resoluciones${hasDocs ? ' <span class=\'detail-tab-dot\'>' + c.documentos.length + '</span>' : ''}</button>
+      <button class="detail-tab" onclick="switchTab(1, this)">Requisitos</button>
+      <button class="detail-tab" onclick="switchTab(2, this)">${tab3Label}</button>
+      <button class="detail-tab" onclick="switchTab(3, this)">Documentación${hasDocs ? ' <span class=\'detail-tab-dot\'>' + c.documentos.length + '</span>' : ''}</button>
+      ${hasInscForm ? `<button class="detail-tab" onclick="switchTab(${inscTabIdx}, this)">Inscripción</button>` : ''}
     </div>
 
     <div id="detail-tab-0" class="detail-tab-panel active">${tab1}${inactiveNote}</div>
     <div id="detail-tab-1" class="detail-tab-panel">${tab2}</div>
     <div id="detail-tab-2" class="detail-tab-panel">${tab3}</div>
     <div id="detail-tab-3" class="detail-tab-panel">${tab4}</div>
+    ${hasInscForm ? `<div id="detail-tab-${inscTabIdx}" class="detail-tab-panel">${tabInsc}</div>` : ''}
 
   </div>
   ${footerHTML()}`;
+
+  initPdfViewers();
 }
 
 function switchTab(idx, btn) {
@@ -759,7 +987,10 @@ async function renderAdmin(app) {
     <div class="admin-header">
       <div class="admin-header-inner">
         <h1 class="admin-title">Panel <span>Administrador</span></h1>
-        <button class="btn-primary" onclick="openCareerModal(null)" style="padding:10px 22px">+ Nueva carrera</button>
+        <div style="display:flex;gap:10px;align-items:center">
+          <a href="/cpanel" style="padding:10px 18px;border:1.5px solid rgba(0,163,224,.4);color:#00A3E0;border-radius:100px;font-size:.82rem;font-weight:700;text-decoration:none">Ir al CPanel completo →</a>
+          <button class="btn-primary" onclick="openCareerModal(null)" style="padding:10px 22px">+ Nueva propuesta</button>
+        </div>
       </div>
     </div>
     <div class="admin-body">
@@ -905,7 +1136,10 @@ async function openCareerModal(id) {
         </div>
         <div class="form-group">
           <label class="form-label">Disciplina</label>
-          <input class="form-input" id="f-disciplina" value="${career?.disciplina || ''}" placeholder="Ej: Informática" />
+          <select class="form-select" id="f-disciplina">
+            <option value="">Seleccionar</option>
+            ${ALLOWED_DISCIPLINAS.map(d => `<option ${career?.disciplina===d?'selected':''}>${d}</option>`).join('')}
+          </select>
         </div>
         <div class="form-group">
           <label class="form-label">Modalidad</label>
@@ -1065,6 +1299,21 @@ const PLACEHOLDER_DATA = {
   contacto: { icon: '✉️', title: 'Contacto', desc: 'Ponete en contacto con el equipo de Educación a Distancia de la UNaM.', isContact: true },
 };
 
+function docInst(titulo, subtitulo, fecha, desc, pdfUrl) {
+  const pdfBtn = pdfUrl
+    ? `<a href="${pdfUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:.83rem;color:var(--unam-cyan);font-weight:600;text-decoration:none">Ver documento PDF →</a>`
+    : `<span style="font-size:.78rem;color:var(--text-muted)">PDF próximamente disponible</span>`;
+  return `<div style="padding:20px 24px;background:var(--bg-card);border:1px solid var(--border-card);border-radius:12px;display:flex;align-items:flex-start;gap:16px">
+    <div style="width:42px;height:42px;background:rgba(0,163,224,.08);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.3rem">📋</div>
+    <div style="flex:1">
+      <div style="font-weight:700;font-size:.95rem;color:var(--text-primary);margin-bottom:3px">${titulo}</div>
+      ${subtitulo ? `<div style="font-size:.82rem;color:var(--text-muted);margin-bottom:2px">${subtitulo}</div>` : ''}
+      ${fecha ? `<div style="font-size:.78rem;color:var(--text-muted);margin-bottom:8px">${fecha}</div>` : ''}
+      ${pdfBtn}
+    </div>
+  </div>`;
+}
+
 function renderPlaceholder(app, page) {
   const d = PLACEHOLDER_DATA[page] || { icon: '🚧', title: 'En construcción', desc: 'Esta sección estará disponible próximamente.' };
 
@@ -1072,52 +1321,64 @@ function renderPlaceholder(app, page) {
     app.innerHTML = `
     <div class="detail-page" style="padding-top:calc(var(--nav-height) + 40px)">
       <div style="max-width:900px;margin:0 auto;padding:0 clamp(16px,4vw,48px) 60px">
-        <h1 style="font-size:1.6rem;font-weight:800;margin-bottom:28px;color:var(--text-primary)">${d.title}</h1>
-        <div style="max-width:820px;margin:0 auto;font-size:1rem;color:var(--text-secondary);line-height:1.85">
+        <h1 style="font-size:1.6rem;font-weight:800;margin-bottom:24px;color:var(--text-primary)">${d.title}</h1>
 
-  <p style="margin-bottom:1.4rem">El <strong style="color:var(--text-primary)">Sistema Institucional de Educación a Distancia (SIED)</strong> es la estructura estratégica de la Universidad Nacional de Misiones (UNaM) dedicada a la gestión, regulación y fortalecimiento de las propuestas educativas mediadas por tecnologías digitales.</p>
+        <!-- Tabs -->
+        <div style="display:flex;gap:4px;border-bottom:2px solid var(--border-card);margin-bottom:32px">
+          <button id="qs-tab-0" onclick="qsTab(0)" style="padding:10px 20px;border:none;background:none;cursor:pointer;font-size:.9rem;font-weight:700;color:var(--unam-cyan);border-bottom:2px solid var(--unam-cyan);margin-bottom:-2px">Sobre el SIED</button>
+          <button id="qs-tab-1" onclick="qsTab(1)" style="padding:10px 20px;border:none;background:none;cursor:pointer;font-size:.9rem;font-weight:600;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-2px">Documentación</button>
+        </div>
 
-  <p style="margin-bottom:2rem">Nuestra misión es democratizar el acceso a la educación superior de calidad, promoviendo la inclusión y la construcción colectiva de saberes en un territorio de fronteras múltiples.</p>
+        <!-- Panel 0: Sobre el SIED -->
+        <div id="qs-panel-0" style="font-size:1rem;color:var(--text-secondary);line-height:1.85">
+          <p style="margin-bottom:1.4rem">El <strong style="color:var(--text-primary)">Sistema Institucional de Educación a Distancia (SIED)</strong> es la estructura estratégica de la Universidad Nacional de Misiones (UNaM) dedicada a la gestión, regulación y fortalecimiento de las propuestas educativas mediadas por tecnologías digitales.</p>
 
-  <h2 style="font-size:1.15rem;font-weight:700;color:var(--text-primary);margin-bottom:1rem;padding-bottom:8px;border-bottom:2px solid var(--unam-cyan)">Pilares Institucionales</h2>
+          <h2 style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin:1.6rem 0 .8rem;padding-bottom:8px;border-bottom:2px solid var(--unam-cyan)">Fundamentación y Trayectoria</h2>
+          <p style="margin-bottom:1rem">Nuestra identidad se basa en la institucionalización de la innovación y la virtualización como ejes del desarrollo socio-educativo. El Área de Educación a Distancia fue creada formalmente por la <strong style="color:var(--text-primary)">Resolución Rectoral Nº 1797-2018</strong> para implementar el SIED y garantizar el acceso a una educación universitaria de excelencia con pertinencia social.</p>
+          <p style="margin-bottom:1.4rem">Operamos bajo la órbita de la Secretaría General Académica, con dependencia directa del Rectorado y el Vice Rectorado.</p>
 
-  <div style="display:flex;flex-direction:column;gap:1rem;margin-bottom:2rem">
-    <div style="padding:16px 20px;background:rgba(0,163,224,.04);border-left:3px solid var(--unam-cyan);border-radius:0 8px 8px 0">
-      <strong style="color:var(--text-primary)">Marco Normativo</strong><br>
-      Operamos bajo el Nuevo Marco Normativo del SIED, aprobado por Resolución Rectoral (ad referendum del Consejo Superior) en 2025. Nos alineamos a los estándares nacionales establecidos por la Resolución ME Nº 2599/2023 y las recomendaciones de la CONEAU.
-    </div>
-    <div style="padding:16px 20px;background:rgba(0,163,224,.04);border-left:3px solid var(--unam-cyan);border-radius:0 8px 8px 0">
-      <strong style="color:var(--text-primary)">Estructura de Gestión</strong><br>
-      Adoptamos un modelo mixto que articula una coordinación central dependiente de la Secretaría General Académica con Unidades de Educación a Distancia (UEaD) en cada Facultad y Escuela.
-    </div>
-    <div style="padding:16px 20px;background:rgba(0,163,224,.04);border-left:3px solid var(--unam-cyan);border-radius:0 8px 8px 0">
-      <strong style="color:var(--text-primary)">Trayectoria y Consolidación</strong><br>
-      Capitalizamos experiencias de virtualización iniciadas en la década de los 90. Entre 2020 y 2025, hemos consolidado una oferta diversa que incluye carreras de pregrado, grado, posgrado y cursos de extensión 100% a distancia o en modalidades combinadas.
-    </div>
-  </div>
+          <h2 style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin:1.6rem 0 .8rem;padding-bottom:8px;border-bottom:2px solid var(--unam-cyan)">Pilares de Gestión</h2>
+          <div style="display:flex;flex-direction:column;gap:1rem;margin-bottom:1.6rem">
+            <div style="padding:16px 20px;background:rgba(0,163,224,.04);border-left:3px solid var(--unam-cyan);border-radius:0 8px 8px 0">
+              <strong style="color:var(--text-primary)">Marco Normativo</strong><br>
+              El SIED cuenta con la validación de la CONEAU (RESFC-2020-267-APN-CONEAU#ME) y de la SPU (RESOL-2020-175-APN-SECPU#ME). Actualmente, nos encontramos en proceso de ratificación institucional en el marco de nuestra evaluación externa periódica.
+            </div>
+            <div style="padding:16px 20px;background:rgba(0,163,224,.04);border-left:3px solid var(--unam-cyan);border-radius:0 8px 8px 0">
+              <strong style="color:var(--text-primary)">Misión Pedagógica</strong><br>
+              Promover propuestas mediadas por tecnologías que incluyan modos alternativos de enseñanza y aprendizaje, fomentando el pensamiento crítico y el compromiso social.
+            </div>
+            <div style="padding:16px 20px;background:rgba(0,163,224,.04);border-left:3px solid var(--unam-cyan);border-radius:0 8px 8px 0">
+              <strong style="color:var(--text-primary)">Modelo de Gestión</strong><br>
+              Coordinación centralizada que articula con Unidades de Educación a Distancia (UEaD) en cada Facultad, asegurando la cohesión en todo el territorio de la provincia.
+            </div>
+          </div>
 
-  <h2 style="font-size:1.15rem;font-weight:700;color:var(--text-primary);margin-bottom:1rem;padding-bottom:8px;border-bottom:2px solid var(--unam-cyan)">Compromiso con la Calidad</h2>
-  <p style="margin-bottom:1rem">El SIED garantiza la excelencia académica mediante:</p>
+          <h2 style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin:1.6rem 0 .8rem;padding-bottom:8px;border-bottom:2px solid var(--unam-cyan)">Compromiso con la Calidad</h2>
+          <p style="margin-bottom:0">Garantizamos la excelencia académica a través de un ecosistema tecnológico propio alojado en el Data Center de la UNaM y un acompañamiento pedagógico continuo que lidera la alfabetización digital de toda nuestra comunidad universitaria.</p>
+        </div>
 
-  <div style="display:flex;flex-direction:column;gap:1rem">
-    <div style="padding:16px 20px;background:rgba(58,170,53,.04);border-left:3px solid var(--unam-green);border-radius:0 8px 8px 0">
-      <strong style="color:var(--text-primary)">Ecosistema Tecnológico</strong><br>
-      Contamos con una infraestructura propia alojada en el Data Center de la UNaM, que asegura la operatividad de nuestras plataformas Moodle y la integración con sistemas como SIU-Guaraní.
-    </div>
-    <div style="padding:16px 20px;background:rgba(58,170,53,.04);border-left:3px solid var(--unam-green);border-radius:0 8px 8px 0">
-      <strong style="color:var(--text-primary)">Acompañamiento Pedagógico</strong><br>
-      Equipos interdisciplinarios trabajan en el diseño de materiales didácticos, sistemas de tutorías y procesos de evaluación continua para asegurar trayectorias formativas significativas.
-    </div>
-    <div style="padding:16px 20px;background:rgba(58,170,53,.04);border-left:3px solid var(--unam-green);border-radius:0 8px 8px 0">
-      <strong style="color:var(--text-primary)">Innovación Permanente</strong><br>
-      Promovemos la investigación y la alfabetización digital en toda la comunidad universitaria, alineados con el Programa de Desarrollo Institucional 2018-2026.
-    </div>
-  </div>
+        <!-- Panel 1: Documentación -->
+        <div id="qs-panel-1" style="display:none">
+          <div style="display:flex;flex-direction:column;gap:16px">
+            ${docInst('Resolución 2599/2023','RESOL-2023-2599-APN-ME','SPU. Aprobación SIED.','','/uploads/institucional/resol-2023-2599.pdf')}
+            ${docInst('RESOL-2020-175-APN-SECPU#ME','SPU. Aprobación SIED.','03/12/2020','','/uploads/institucional/resol-2020-175.pdf')}
+            ${docInst('RESFC-2020-267-APN-CONEAU#ME','CONEAU. Aprobación SIED.','01/09/2020','','/uploads/institucional/resfc-2020-267.pdf')}
+          </div>
+        </div>
 
-</div>
       </div>
     </div>
     ${footerHTML()}`;
+    // Tab switch logic
+    window.qsTab = function(i) {
+      [0,1].forEach(n => {
+        document.getElementById('qs-panel-'+n).style.display = n===i ? '' : 'none';
+        const btn = document.getElementById('qs-tab-'+n);
+        btn.style.color        = n===i ? 'var(--unam-cyan)' : 'var(--text-muted)';
+        btn.style.fontWeight   = n===i ? '700' : '600';
+        btn.style.borderBottom = n===i ? '2px solid var(--unam-cyan)' : '2px solid transparent';
+      });
+    };
     return;
   }
 
@@ -1143,6 +1404,43 @@ function renderPlaceholder(app, page) {
   ${footerHTML()}`;
 }
 
+// ── UNIDADES ACADÉMICAS ───────────────────────────────────
+const UNIDADES_DATA = [
+  { nombre: 'Escuela Agrotécnica Eldorado',                    domicilio: 'Bertoni 152 Km 3',                            tel: '+54 3751 431122 / 431329',                    web: 'https://www.eae.unam.edu.ar/',     regional: 'Eldorado'},
+  { nombre: 'Escuela de Enfermería',                           domicilio: 'Av. López Torres 3415',                       tel: '+54 3764 4428177 / 4440961',                  web: 'https://www.escenf.unam.edu.ar/', regional: 'Posadas' },
+  { nombre: 'Facultad de Arte y Diseño',                       domicilio: 'Carhué Nº 832',                              tel: '+54 3755 401150 / 406601 Int 108',            web: 'https://www.fayd.unam.edu.ar/',     regional: 'Oberá'   },
+  { nombre: 'Facultad de Ciencias Económicas',                 domicilio: 'Av. Fernando Elías Llamosas 9458. Campus UNaM', tel: '+54 376 4480394 / 4480395 / 4480006', whatsapp: '3764172541', web: 'https://www.fce.unam.edu.ar/', regional: 'Posadas' },
+  { nombre: 'Facultad de Ciencias Exactas, Químicas y Naturales', domicilio: 'Félix de Azara 1552',                      tel: '+54 3764 4435099 Int 114',                    web: 'https://www.fceqyn.unam.edu.ar/', regional: 'Posadas' },
+  { nombre: 'Facultad de Ciencias Forestales',                 domicilio: 'Bertoni 124 Km 3',                            tel: '+54 3751 431526 / 431780 Int 108',            web: 'https://www.fcf.unam.edu.ar/',     regional: 'Eldorado'},
+  { nombre: 'Facultad de Humanidades y Ciencias Sociales',     domicilio: 'Tucumán 1946',                                tel: '+54 376 4434344 / 4434335 / 4425641 Int 133', web: 'https://www.fhycs.unam.edu.ar/',  regional: 'Posadas' },
+  { nombre: 'Facultad de Ingeniería',                          domicilio: 'Juan Manuel de Rosas 325',                    tel: '+54 3755 422169 / 422170 Int 103',            web: 'https://www.fio.unam.edu.ar/',     regional: 'Oberá'   },
+];
+
+function renderUnidades(app) {
+  const cards = UNIDADES_DATA.map(u => `
+    <div style="padding:22px 24px;background:var(--bg-card);border:1px solid var(--border-card);border-radius:12px">
+      <div style="font-size:1rem;font-weight:700;color:var(--text-primary);margin-bottom:10px">${u.nombre}</div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:.88rem;color:var(--text-secondary)">
+        <div>📍 ${u.domicilio}, ${u.regional}</div>
+        <div>📞 ${u.tel}</div>
+        ${u.whatsapp ? `<div>💬 WhatsApp ${u.whatsapp}</div>` : ''}
+        <div style="margin-top:4px"><a href="${u.web}" target="_blank" style="color:var(--unam-cyan);font-weight:600;text-decoration:none">${u.web}</a></div>
+      </div>
+    </div>`).join('');
+
+  app.innerHTML = `
+    <div class="detail-page" style="padding-top:calc(var(--nav-height) + 40px)">
+      <div style="max-width:900px;margin:0 auto;padding:0 clamp(16px,4vw,48px) 60px">
+        <h1 style="font-size:1.6rem;font-weight:800;margin-bottom:8px;color:var(--text-primary)">Unidades Académicas</h1>
+        <p style="font-size:.95rem;color:var(--text-muted);margin-bottom:28px">Universidad Nacional de Misiones</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px">
+          ${cards}
+        </div>
+      </div>
+    </div>
+    ${footerHTML()}`;
+}
+
 // ── FOOTER ────────────────────────────────────────────────
 function footerHTML() {
   return `
@@ -1154,18 +1452,20 @@ function footerHTML() {
         </div>
         <div class="footer-col"><h4>Oferta</h4><ul>
           <li><a onclick="filterByCurso()">Cursos</a></li>
-          <li><a onclick="navigate('search')">Pregrado</a></li>
-          <li><a onclick="navigate('search')">Grado</a></li>
-          <li><a onclick="navigate('search')">Posgrado</a></li>
+          <li><a onclick="filterByTipo('Pregrado')">Pregrado</a></li>
+          <li><a onclick="filterByTipo('Grado')">Grado</a></li>
+          <li><a onclick="filterByTipo('Posgrado')">Posgrado</a></li>
         </ul></div>
         <div class="footer-col"><h4>Institucional</h4><ul>
           <li><a href="https://unam.edu.ar" target="_blank">Sitio Oficial</a></li>
-          <li><a href="https://unam.edu.ar/index.php/institucional/unidades-academicas" target="_blank">Unidades Académicas</a></li>
-          <li><a href="https://unam.edu.ar" target="_blank">Red Solidaria de Formación</a></li>
+          <li><a onclick="navigate('unidades')" style="cursor:pointer">Unidades Académicas</a></li>
+          <li><a onclick="navigate('quienes');setTimeout(()=>window.qsTab&&window.qsTab(1),80)" style="cursor:pointer">Documentación</a></li>
         </ul></div>
-        <div class="footer-col"><h4>Acceso</h4><ul>
+        <div class="footer-col"><h4>Accesos</h4><ul>
           <li><a href="https://ead.unam.edu.ar/" target="_blank">Campus Virtual</a></li>
           <li><a href="mailto:ead@unam.edu.ar">ead@unam.edu.ar</a></li>
+          <li><a href="https://www.youtube.com/@eadunam" target="_blank">YouTube</a></li>
+          <li><a href="https://www.youtube.com/@redsolidariadeformacion" target="_blank">Red Solidaria de Formación</a></li>
         </ul></div>
       </div>
       <div class="footer-bottom">
@@ -1198,30 +1498,30 @@ function setupNavbar() {
 
 // ── INIT ──────────────────────────────────────────────────
 function togglePdfFull(id) {
-  const iframe = document.getElementById(id);
+  const viewer = document.getElementById(id);
   const btn = document.getElementById(id + '-btn');
-  if (!iframe) return;
-  const isExpanded = iframe.getAttribute('data-expanded') === '1';
+  if (!viewer) return;
+  const isExpanded = viewer.getAttribute('data-expanded') === '1';
   if (isExpanded) {
-    iframe.style.height = '520px';
-    iframe.style.position = '';
-    iframe.style.top = '';
-    iframe.style.left = '';
-    iframe.style.width = '';
-    iframe.style.zIndex = '';
-    iframe.style.background = '';
-    iframe.removeAttribute('data-expanded');
+    viewer.style.height = '520px';
+    viewer.style.position = '';
+    viewer.style.top = '';
+    viewer.style.left = '';
+    viewer.style.width = '';
+    viewer.style.zIndex = '';
+    viewer.style.background = '';
+    viewer.removeAttribute('data-expanded');
     if (btn) btn.textContent = '⛶ Expandir';
-    document.body.style.overflow = '';
+  document.body.style.overflow = '';
   } else {
-    iframe.style.height = 'calc(100vh - 80px)';
-    iframe.style.position = 'fixed';
-    iframe.style.top = '80px';
-    iframe.style.left = '0';
-    iframe.style.width = '100%';
-    iframe.style.zIndex = '8000';
-    iframe.style.background = '#fff';
-    iframe.setAttribute('data-expanded','1');
+    viewer.style.height = 'calc(100vh - 80px)';
+    viewer.style.position = 'fixed';
+    viewer.style.top = '80px';
+    viewer.style.left = '0';
+    viewer.style.width = '100%';
+    viewer.style.zIndex = '8000';
+    viewer.style.background = '#fff';
+    viewer.setAttribute('data-expanded','1');
     if (btn) {
       btn.textContent = '✕ Cerrar';
       btn.style.position = 'fixed';
@@ -1234,24 +1534,120 @@ function togglePdfFull(id) {
 }
 window.togglePdfFull = togglePdfFull;
 
-function checkPdfLoad(iframe) {
-  // If the iframe loads HTML (home page fallback), show error message
-  try {
-    const ct = iframe.contentDocument?.contentType || '';
-    if (ct && !ct.includes('pdf') && !ct.includes('octet')) {
-      showPdfError(iframe);
-    }
-  } catch {}
-}
-function showPdfError(iframe) {
-  if (!iframe) return;
-  iframe.style.display = 'none';
-  const errId = iframe.id + '-err';
-  const err = document.getElementById(errId);
+function showPdfErrorById(id) {
+  const err = document.getElementById(id + '-err');
   if (err) err.style.display = '';
 }
-window.checkPdfLoad = checkPdfLoad;
-window.showPdfError = showPdfError;
+
+function updatePdfControls(id) {
+  const st = PDF_VIEWERS.get(id);
+  if (!st) return;
+  const page = document.getElementById(id + '-page');
+  const prev = document.getElementById(id + '-prev');
+  const next = document.getElementById(id + '-next');
+  if (page) page.textContent = `${st.pageNum} / ${st.totalPages || 0}`;
+  if (prev) prev.disabled = st.pageNum <= 1 || st.totalPages <= 0;
+  if (next) next.disabled = st.pageNum >= st.totalPages || st.totalPages <= 0;
+}
+
+function queuePdfRender(id, num) {
+  const st = PDF_VIEWERS.get(id);
+  if (!st || !st.pdfDoc) return;
+  if (st.rendering) {
+    st.pendingPage = num;
+    return;
+  }
+  st.pageNum = Math.max(1, Math.min(num, st.totalPages));
+  st.rendering = true;
+  st.pdfDoc.getPage(st.pageNum).then((page) => {
+    const viewport = page.getViewport({ scale: st.scale });
+    st.canvas.height = viewport.height;
+    st.canvas.width = viewport.width;
+    return page.render({ canvasContext: st.ctx, viewport }).promise;
+  }).then(() => {
+    st.rendering = false;
+    updatePdfControls(id);
+    if (st.pendingPage !== null) {
+      const next = st.pendingPage;
+      st.pendingPage = null;
+      queuePdfRender(id, next);
+    }
+  }).catch(() => {
+    st.rendering = false;
+    showPdfErrorById(id);
+  });
+}
+
+function pdfPrev(id) {
+  const st = PDF_VIEWERS.get(id);
+  if (!st || st.pageNum <= 1) return;
+  queuePdfRender(id, st.pageNum - 1);
+}
+
+function pdfNext(id) {
+  const st = PDF_VIEWERS.get(id);
+  if (!st || st.pageNum >= st.totalPages) return;
+  queuePdfRender(id, st.pageNum + 1);
+}
+
+function pdfZoom(id, delta) {
+  const st = PDF_VIEWERS.get(id);
+  if (!st) return;
+  st.scale = Math.max(0.7, Math.min(2.4, +(st.scale + delta).toFixed(2)));
+  queuePdfRender(id, st.pageNum);
+}
+
+async function initPdfViewer(el) {
+  if (!el || el.dataset.pdfReady === '1') return;
+  const id = el.id;
+  const url = el.dataset.pdfUrl;
+  const canvas = document.getElementById(id + '-canvas');
+  if (!id || !url || !canvas) return;
+
+  if (!window.pdfjsLib) {
+    showPdfErrorById(id);
+    return;
+  }
+
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.js';
+  const st = {
+    id,
+    canvas,
+    ctx: canvas.getContext('2d'),
+    pageNum: 1,
+    pendingPage: null,
+    rendering: false,
+    totalPages: 0,
+    scale: 1.2,
+    pdfDoc: null,
+  };
+  PDF_VIEWERS.set(id, st);
+  el.dataset.pdfReady = '1';
+
+  try {
+    const loadingTask = window.pdfjsLib.getDocument({ url });
+    st.pdfDoc = await loadingTask.promise;
+    st.totalPages = st.pdfDoc.numPages || 0;
+    if (!st.totalPages) {
+      showPdfErrorById(id);
+      return;
+    }
+    updatePdfControls(id);
+    queuePdfRender(id, 1);
+  } catch {
+    showPdfErrorById(id);
+  }
+}
+
+function initPdfViewers() {
+  document.querySelectorAll('[data-pdf-viewer="1"]').forEach((el) => {
+    initPdfViewer(el);
+  });
+}
+
+window.pdfPrev = pdfPrev;
+window.pdfNext = pdfNext;
+window.pdfZoom = pdfZoom;
 
 async function initApp() {
   setupNavbar();
@@ -1260,6 +1656,8 @@ async function initApp() {
     const modeRes = await fetch('/api/access-mode');
     if (modeRes.ok) {
       const modeData = await modeRes.json();
+      window._siteUnderConstruction = modeData.siteUnderConstruction === true;
+      window._siteUnderConstructionImage = modeData.constructionImage || '/public/site-under-construction.svg';
       if (!modeData.open) {
         // Restricted mode: check if user is authenticated via Google
         window._accessRestricted = true;
@@ -1267,6 +1665,7 @@ async function initApp() {
       }
     }
   } catch {}
-  navigate('home');
+  const initialPage = hydrateRouteFromHash();
+  navigate(initialPage);
 }
 window.initApp = initApp;

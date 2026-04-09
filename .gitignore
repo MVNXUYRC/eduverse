@@ -6,3 +6,6 @@ node_modules/
 npm-debug.log*
 .railway/
 dist/
+.run/
+.codex
+frontend/uploads/

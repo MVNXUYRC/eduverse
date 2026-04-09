@@ -11,10 +11,19 @@ const {
   ROOT_EMAIL, ROLES, CAN_CREATE, EAD_UNIT,
   signJWT, requireAuth, requireRole,
   isActiveState, normalizeState,
-  generatePassword, usernameFromEmail, toProperCase,
-  hashPassword, formatPhone,
-  validateEmail, validateDNI, validatePassword,
+  toProperCase,
+  formatPhone, formatDNI, hashPassword,
+  validateEmail, validateDNI, validatePassword, generatePassword,
 } = require('./auth');
+const { buildBackupPayload, applyBackupPayload } = require('./backup-utils');
+const ALLOWED_DISCIPLINAS = ['Ciencias Sociales', 'Ciencias Aplicadas', 'Artes'];
+const DEFAULT_CONSTRUCTION_IMAGE = '/public/site-under-construction.svg';
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20 MB por archivo
+const MAX_REQUEST_BYTES = 50 * 1024 * 1024; // 50 MB por request
+const ROOT_PASSWORD = String(process.env.ROOT_PASSWORD || '');
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const loginAttempts = new Map();
 
 const UPLOADS_DIR = path.join(__dirname, '../../frontend/uploads');
 
@@ -32,20 +41,141 @@ function audit(action, entity, detail, user) {
   db().auditLog.unshift({
     ts: new Date().toISOString(),
     action, entity, detail,
-    user: user?.username || user?.email || '?',
+    user: user?.email || '?',
     rol: user?.rol || '?',
   });
   // Keep last 500 entries
   if (db().auditLog.length > 500) db().auditLog = db().auditLog.slice(0,500);
 }
 function db()   { return _db; }
-function save() {
-  if (typeof _save === 'function') _save();
+async function save() {
+  if (typeof _save === 'function') await _save();
   else console.error('[router] save() called but no save function registered!');
 }
 
 function nextId(arr) {
   return (arr||[]).length > 0 ? Math.max(...arr.map(x=>x.id||0))+1 : 1;
+}
+
+function canonicalEmail(email) {
+  const raw = String(email || '').trim().toLowerCase();
+  const [localPart, domainPart] = raw.split('@');
+  if (!localPart || !domainPart) return raw;
+  if (domainPart === 'gmail.com' || domainPart === 'googlemail.com') {
+    const local = localPart.split('+')[0].replace(/\./g, '');
+    return `${local}@gmail.com`;
+  }
+  return `${localPart}@${domainPart}`;
+}
+
+function sanitizeText(value, max = 5000) {
+  return String(value || '')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+
+function sanitizeUrl(value, { allowMailto = false } = {}) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const u = new URL(raw);
+    const p = u.protocol.toLowerCase();
+    if (p === 'http:' || p === 'https:' || (allowMailto && p === 'mailto:')) return raw;
+  } catch {
+    return '';
+  }
+  return '';
+}
+
+function sanitizeRichHtml(html) {
+  let out = String(html || '');
+  out = out.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+  out = out.replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, '');
+  out = out.replace(/<iframe[\s\S]*?>[\s\S]*?<\/iframe>/gi, '');
+  out = out.replace(/<object[\s\S]*?>[\s\S]*?<\/object>/gi, '');
+  out = out.replace(/<embed[\s\S]*?>/gi, '');
+  out = out.replace(/\son[a-z]+\s*=\s*(['"]).*?\1/gi, '');
+  out = out.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '');
+  out = out.replace(/\shref\s*=\s*(['"])\s*javascript:[\s\S]*?\1/gi, '');
+  out = out.replace(/\ssrc\s*=\s*(['"])\s*javascript:[\s\S]*?\1/gi, '');
+  out = out.replace(/\sstyle\s*=\s*(['"])[\s\S]*?\1/gi, '');
+  return out.trim().slice(0, 180000);
+}
+
+function isPdfBuffer(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 5) return false;
+  const head = buf.slice(0, 1024).toString('latin1');
+  return head.includes('%PDF-');
+}
+
+function findInvalidUpload(body) {
+  if (!body || typeof body !== 'object') return null;
+  for (const [field, part] of Object.entries(body)) {
+    if (!part || !part.filename || !Buffer.isBuffer(part.data)) continue;
+    const filename = String(part.filename || '');
+    const extOk = /\.pdf$/i.test(filename);
+    const mime = String(part.contentType || '').toLowerCase();
+    const mimeOk = !mime || mime === 'application/pdf' || mime.includes('pdf');
+    const magicOk = isPdfBuffer(part.data);
+    if (!extOk || !mimeOk || !magicOk) {
+      return { field, filename, reason: 'Solo se permiten archivos PDF válidos.' };
+    }
+  }
+  return null;
+}
+
+function getClientIp(req) {
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return fwd || req.socket?.remoteAddress || req.connection?.remoteAddress || 'unknown';
+}
+
+function getLoginKey(emailKey, ip) {
+  return `${emailKey}|${ip}`;
+}
+
+function getAttemptInfo(key) {
+  const now = Date.now();
+  const info = loginAttempts.get(key);
+  if (!info) return { attempts: 0, lockedUntil: 0 };
+  if (info.lockedUntil && info.lockedUntil < now) {
+    loginAttempts.delete(key);
+    return { attempts: 0, lockedUntil: 0 };
+  }
+  return info;
+}
+
+function registerLoginFailure(key) {
+  const now = Date.now();
+  const current = getAttemptInfo(key);
+  const nextAttempts = (current.attempts || 0) + 1;
+  const next = { attempts: nextAttempts, lockedUntil: 0 };
+  if (nextAttempts >= MAX_LOGIN_ATTEMPTS) {
+    next.lockedUntil = now + LOGIN_LOCK_MS;
+  }
+  loginAttempts.set(key, next);
+  return next;
+}
+
+function clearLoginAttempts(key) {
+  loginAttempts.delete(key);
+}
+
+function ensureConfig() {
+  if (!db().config || typeof db().config !== 'object') db().config = {};
+  return db().config;
+}
+
+function getRootPasswordHash() {
+  return String(db().config?.root_password_hash || '');
+}
+
+function verifyRootPassword(password) {
+  const storedHash = getRootPasswordHash();
+  if (storedHash) return storedHash === hashPassword(password);
+  if (!ROOT_PASSWORD) return null;
+  return password === ROOT_PASSWORD;
 }
 
 // Carrera tiene unidadesAcademicas[] (array) — soporte interinstitucional
@@ -89,7 +219,18 @@ function parseMultipart(body, boundary) {
 }
 function readBodyRaw(req) {
   return new Promise((resolve,reject)=>{
-    const c=[]; req.on('data',ch=>c.push(ch)); req.on('end',()=>resolve(Buffer.concat(c))); req.on('error',reject);
+    const c=[]; let size = 0;
+    req.on('data',(ch)=>{
+      size += ch.length;
+      if (size > MAX_REQUEST_BYTES) {
+        reject({ status: 413, message: 'El contenido a guardar es demasiado grande (HTTP 413).' });
+        req.destroy();
+        return;
+      }
+      c.push(ch);
+    });
+    req.on('end',()=>resolve(Buffer.concat(c)));
+    req.on('error',reject);
   });
 }
 async function parseRequest(req) {
@@ -119,39 +260,89 @@ function parseTags(val) {
   }
   return [];
 }
+function findOversizedUpload(body) {
+  if (!body || typeof body !== 'object') return null;
+  for (const [field, part] of Object.entries(body)) {
+    if (!part || !part.filename || !Buffer.isBuffer(part.data)) continue;
+    if (part.data.length > MAX_UPLOAD_BYTES) {
+      return { field, filename: part.filename, size: part.data.length };
+    }
+  }
+  return null;
+}
 
 // ── AUTH ──────────────────────────────────────────────────
-async function handleLogin(body) {
-  const email=(body.email||'').toLowerCase().trim(), pass=(body.password||'');
-  if (!email||!pass) return {status:400,data:{error:'Email y contraseña requeridos'}};
+async function handleLogin(req, body) {
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  if (!email || !password) return { status: 400, data: { error: 'Correo y contraseña son obligatorios.' } };
 
-  if (email===ROOT_EMAIL.toLowerCase()) {
-    const rp = process.env.ROOT_PASSWORD||'UNaM@Root2025';
-    if (pass!==rp) return {status:401,data:{error:'Credenciales incorrectas'}};
-    const token = signJWT({id:'root',email:ROOT_EMAIL,username:'root',nombre:'Administrador',apellido:'Root',rol:ROLES.ROOT,unidades:db().unidadesAcademicas||[],mustChangePassword:false});
-    return {status:200,data:{token,rol:ROLES.ROOT,nombre:'Administrador Root',mustChangePassword:false}};
+  const emailKey = canonicalEmail(email);
+  const ip = getClientIp(req);
+  const attemptKey = getLoginKey(emailKey, ip);
+  const attempts = getAttemptInfo(attemptKey);
+  if (attempts.lockedUntil && attempts.lockedUntil > Date.now()) {
+    const mins = Math.max(1, Math.ceil((attempts.lockedUntil - Date.now()) / 60000));
+    return { status: 429, data: { error: `Demasiados intentos fallidos. Reintentá en ${mins} minuto(s).` } };
   }
 
-  const user = (db().usuarios||[]).find(u=>u.email.toLowerCase()===email);
-  if (!user)        return {status:401,data:{error:'Credenciales incorrectas'}};
-  if (!user.activo) return {status:403,data:{error:'Usuario desactivado'}};
-  if (user.passwordHash!==hashPassword(pass)) return {status:401,data:{error:'Credenciales incorrectas'}};
+  if (emailKey === canonicalEmail(ROOT_EMAIL)) {
+    const rootPasswordValid = verifyRootPassword(password);
+    if (rootPasswordValid === null) {
+      return { status: 500, data: { error: 'ROOT_PASSWORD no configurada en el servidor.' } };
+    }
+    if (!rootPasswordValid) {
+      registerLoginFailure(attemptKey);
+      return { status: 401, data: { error: 'Credenciales inválidas.' } };
+    }
+    clearLoginAttempts(attemptKey);
+    const rootUser = { id:'root', email:ROOT_EMAIL, nombre:'Administrador', apellido:'Root', rol:ROLES.ROOT, unidades:db().unidadesAcademicas||[] };
+    const token = signJWT(rootUser);
+    audit('LOGIN', 'sesion', `Acceso al panel desde IP ${ip}`, rootUser);
+    await save();
+    return {status:200,data:{token,rol:ROLES.ROOT,nombre:'Administrador Root'}};
+  }
 
-  const mcp = !!user.mustChangePassword;
-  const token = signJWT({id:user.id,email:user.email,username:user.username,nombre:user.nombre,apellido:user.apellido,rol:user.rol,unidades:user.unidades||[],mustChangePassword:mcp});
+  const user = (db().usuarios||[]).find(u=>canonicalEmail(u.email)===emailKey);
+  if (!user || user.activo===false || !user.passwordHash) {
+    registerLoginFailure(attemptKey);
+    return {status:401,data:{error:'Credenciales inválidas.'}};
+  }
+  if (user.passwordHash !== hashPassword(password)) {
+    registerLoginFailure(attemptKey);
+    return {status:401,data:{error:'Credenciales inválidas.'}};
+  }
+
+  clearLoginAttempts(attemptKey);
+  const token = signJWT({id:user.id,email:user.email,nombre:user.nombre,apellido:user.apellido,rol:user.rol,unidades:user.unidades||[]});
   const idx = db().usuarios.findIndex(u=>u.id===user.id);
-  if (idx!==-1) { db().usuarios[idx].ultimoAcceso=new Date().toISOString(); save(); }
-  return {status:200,data:{token,rol:user.rol,nombre:`${user.nombre} ${user.apellido}`,mustChangePassword:mcp}};
+  audit('LOGIN', 'sesion', `Acceso al panel desde IP ${ip}`, user);
+  if (idx!==-1) db().usuarios[idx].ultimoAcceso=new Date().toISOString();
+  await save();
+  return {status:200,data:{token,rol:user.rol,nombre:`${user.nombre} ${user.apellido}`}};
 }
 
 async function handleChangePassword(req, body) {
   const auth = requireAuth(req);
   if (!auth.ok) return {status:auth.status,data:{error:auth.error}};
-  if (auth.user.rol===ROLES.ROOT) return {status:403,data:{error:'La contraseña del root se gestiona por variable ROOT_PASSWORD'}};
   const {currentPassword,newPassword} = body;
   if (!currentPassword||!newPassword) return {status:400,data:{error:'Ambas contraseñas son obligatorias'}};
   const err = validatePassword(newPassword);
   if (err) return {status:400,data:{error:err}};
+  if (auth.user.rol===ROLES.ROOT) {
+    const rootPasswordValid = verifyRootPassword(String(currentPassword));
+    if (rootPasswordValid === null) return {status:500,data:{error:'ROOT_PASSWORD no configurada en el servidor.'}};
+    if (!rootPasswordValid) return {status:401,data:{error:'Contraseña actual incorrecta'}};
+    if (hashPassword(String(newPassword))===getRootPasswordHash()) {
+      return {status:400,data:{error:'La nueva contraseña debe ser diferente'}};
+    }
+    const config = ensureConfig();
+    config.root_password_hash = hashPassword(String(newPassword));
+    config.root_password_changed_at = new Date().toISOString();
+    config.root_password_changed_by = auth.user.email;
+    await save();
+    return {status:200,data:{success:true}};
+  }
   const idx = (db().usuarios||[]).findIndex(u=>u.id===auth.user.id);
   if (idx===-1) return {status:404,data:{error:'Usuario no encontrado'}};
   const user = db().usuarios[idx];
@@ -160,7 +351,7 @@ async function handleChangePassword(req, body) {
   db().usuarios[idx].passwordHash=hashPassword(newPassword);
   db().usuarios[idx].mustChangePassword=false;
   db().usuarios[idx].passwordChangedAt=new Date().toISOString();
-  save();
+  await save();
   return {status:200,data:{success:true}};
 }
 
@@ -188,25 +379,26 @@ async function handleCreateUsuario(req, body) {
   if (rol===ROLES.UNIDADES&&(!unidades||!unidades.length))
     return {status:400,data:{error:'El Administrador de Unidades debe tener al menos una unidad académica asignada'}};
   const dniClean = String(dni).replace(/\D/g,'');
-  if ((db().usuarios||[]).find(u=>u.email.toLowerCase()===email.toLowerCase()))
+  if ((db().usuarios||[]).find(u=>canonicalEmail(u.email)===canonicalEmail(email)))
     return {status:409,data:{error:'El correo ya está registrado'}};
   if ((db().usuarios||[]).find(u=>String(u.dni).replace(/\D/g,'')===dniClean))
     return {status:409,data:{error:'El documento ya está registrado'}};
-  // Institucional can assign any unit to new users
   const plainPassword = generatePassword();
   const nuevo = {
     id:nextId(db().usuarios||[]),
     nombre:toProperCase(nombre),apellido:toProperCase(apellido),
-    dni:dniClean,email:email.trim(),username:usernameFromEmail(email),
+    dni:formatDNI(dniClean),email:email.trim(),
     telefono:formatPhone(telefono),rol,unidades:unidades||[],
-    passwordHash:hashPassword(plainPassword),mustChangePassword:true,
-    activo:true,creadoPor:cr.username||cr.email,creadoEn:new Date().toISOString(),
-    ultimoAcceso:null,passwordChangedAt:null,
+    activo:true,creadoPor:cr.email,creadoEn:new Date().toISOString(),
+    ultimoAcceso:null,
+    passwordHash:hashPassword(plainPassword),
+    mustChangePassword:true,
+    passwordChangedAt:null,
   };
   if (!db().usuarios) db().usuarios=[];
   db().usuarios.push(nuevo);
   audit('CREAR', 'usuario', nuevo.email, auth.user);
-  save();
+  await save();
   return {status:201,data:{...safeUser(nuevo),generatedPassword:plainPassword}};
 }
 
@@ -220,7 +412,7 @@ async function handleUpdateUsuario(req, body, id) {
   if (body.rol&&body.rol!==user.rol&&auth.user.rol!==ROLES.ROOT) return {status:403,data:{error:'Solo root puede cambiar roles'}};
   if (body.email&&body.email.toLowerCase()!==user.email.toLowerCase()) {
     if (!validateEmail(body.email)) return {status:400,data:{error:'Correo inválido'}};
-    if ((db().usuarios||[]).find(u=>u.email.toLowerCase()===body.email.toLowerCase()&&u.id!==user.id))
+    if ((db().usuarios||[]).find(u=>canonicalEmail(u.email)===canonicalEmail(body.email)&&u.id!==user.id))
       return {status:409,data:{error:'Correo ya registrado'}};
   }
   if (body.dni) {
@@ -228,32 +420,40 @@ async function handleUpdateUsuario(req, body, id) {
     if (!validateDNI(dc)) return {status:400,data:{error:'DNI inválido'}};
     if ((db().usuarios||[]).find(u=>String(u.dni).replace(/\D/g,'')===dc&&u.id!==user.id))
       return {status:409,data:{error:'Documento ya registrado'}};
-    body.dni=dc;
+    body.dni=formatDNI(dc);
   }
   if (body.nombre)   user.nombre=toProperCase(body.nombre);
   if (body.apellido) user.apellido=toProperCase(body.apellido);
   if (body.dni)      user.dni=body.dni;
   if (body.telefono) user.telefono=formatPhone(body.telefono);
-  if (body.email)    {user.email=body.email.trim();user.username=usernameFromEmail(body.email);}
+  if (body.email)    user.email=body.email.trim();
   if (body.rol)      user.rol=body.rol;
   if (body.unidades) user.unidades=body.unidades;
   if (body.activo!==undefined) user.activo=body.activo;
-  let newPlainPass=null;
-  if (body.resetPassword) {
-    newPlainPass=generatePassword();
-    user.passwordHash=hashPassword(newPlainPass);
-    user.mustChangePassword=true;
+  let generatedPassword = null;
+  if (body.resetPassword === true) {
+    generatedPassword = generatePassword();
+    user.passwordHash = hashPassword(generatedPassword);
+    user.mustChangePassword = true;
+    user.passwordChangedAt = null;
   }
-  user.modificadoPor=auth.user.username||auth.user.email;
+  if (body.newPassword) {
+    const err = validatePassword(String(body.newPassword));
+    if (err) return {status:400,data:{error:err}};
+    user.passwordHash = hashPassword(String(body.newPassword));
+    user.mustChangePassword = true;
+    user.passwordChangedAt = null;
+  }
+  user.modificadoPor=auth.user.email;
   user.modificadoEn=new Date().toISOString();
   db().usuarios[idx]=user;
-  save();
-  const result=safeUser(user);
-  if (newPlainPass) result.generatedPassword=newPlainPass;
-  return {status:200,data:result};
+  await save();
+  const payload = safeUser(user);
+  if (generatedPassword) payload.generatedPassword = generatedPassword;
+  return {status:200,data:payload};
 }
 
-function handleDeleteUsuario(req, id, params) {
+async function handleDeleteUsuario(req, id, params) {
   const auth = requireRole(req, ROLES.INSTITUCIONAL);
   if (!auth.ok) return {status:auth.status,data:{error:auth.error}};
   if (auth.user.rol !== ROLES.ROOT) return {status:403,data:{error:'Solo el usuario root puede realizar esta acción'}};
@@ -266,14 +466,14 @@ function handleDeleteUsuario(req, id, params) {
   if (hard) {
     db().usuarios.splice(idx, 1);
     audit('ELIMINAR', 'usuario', email, auth.user);
-    save();
+    await save();
     return {status:200,data:{success:true,deleted:true,id:parseInt(id)}};
   }
   db().usuarios[idx].activo=false;
-  db().usuarios[idx].desactivadoPor=auth.user.username;
+  db().usuarios[idx].desactivadoPor=auth.user.email;
   db().usuarios[idx].desactivadoEn=new Date().toISOString();
   audit('BAJA', 'usuario', email, auth.user);
-  save();
+  await save();
   return {status:200,data:{success:true,id:parseInt(id)}};
 }
 
@@ -292,8 +492,13 @@ function handleGetCarrerasAdmin(req, params) {
 
   const q=params.get('q');
   if (q) {
-    const ql=q.toLowerCase();
-    rows=rows.filter(c=>c.nombre.toLowerCase().includes(ql)||c.disciplina?.toLowerCase().includes(ql));
+    const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    const ql=norm(q);
+    rows=rows.filter(c=>
+      norm(c.nombre).includes(ql)||
+      norm(c.disciplina).includes(ql)||
+      (c.disertantes||[]).some(d=>norm(d).includes(ql))
+    );
   }
   const esCurso=params.get('esCurso');
   if (esCurso!==null&&esCurso!==''&&esCurso!=='undefined') rows=rows.filter(c=>String(!!c.esCurso)===esCurso);
@@ -310,6 +515,17 @@ function handleGetCarrerasAdmin(req, params) {
   const page=Math.max(parseInt(params.get('page')||'1'),1);
   const total=rows.length;
   return {status:200,data:{data:rows.slice((page-1)*limit,page*limit),meta:{total,page,limit,totalPages:Math.ceil(total/limit)||1}}};
+}
+
+function handleGetCarreraAdmin(req, id) {
+  const auth = requireRole(req, ROLES.UNIDADES);
+  if (!auth.ok) return {status:auth.status,data:{error:auth.error}};
+  const row = (db().carreras||[]).find(c=>c.id===parseInt(id));
+  if (!row) return {status:404,data:{error:'Carrera no encontrada'}};
+  if (!canManageCarrera(auth.user, row.unidadesAcademicas||[row.unidadAcademica])) {
+    return {status:403,data:{error:'Sin permiso para esta carrera'}};
+  }
+  return {status:200,data:row};
 }
 
 async function buildCarreraFromBody(body, existing) {
@@ -357,28 +573,35 @@ async function buildCarreraFromBody(body, existing) {
   documentos = documentos.map((d,i)=>{
     const fk=`doc_pdf_${i}`;
     if (body[fk]?.filename) d.pdf=saveFile(body[fk].data,'resoluciones',body[fk].filename);
+    d.tipo = sanitizeText(d.tipo, 80);
+    d.organismo = sanitizeText(d.organismo, 120);
+    d.numero = sanitizeText(d.numero, 40);
+    d.anio = sanitizeText(d.anio, 10);
+    if (d.pdf) d.pdf = sanitizeUrl(d.pdf) || d.pdf;
     return d;
   });
 
   return {
-    nombre:               String(body.nombre||'').trim().replace(/\s+/g,' '),
+    nombre:               sanitizeText(body.nombre !== undefined ? body.nombre : (existing?.nombre || ''), 220),
     esCurso,
-    tipo:                 esCurso ? 'Curso' : (body.tipo||existing?.tipo||''),
-    subtipo:              (!esCurso && body.tipo==='Posgrado') ? (body.subtipo||existing?.subtipo||'') : '',
-    disciplina:           String(body.disciplina||''),
-    modalidad:            body.modalidad||'Híbrida',
-    duracion:             String(body.duracion||''),
-    tags:                 parseTags(body.tags),
-    disertantes:          parseTags(body.disertantes),
+    tipo:                 esCurso ? 'Curso' : sanitizeText(body.tipo !== undefined ? body.tipo : (existing?.tipo || ''), 80),
+    subtipo:              (!esCurso && ((body.tipo !== undefined ? body.tipo : existing?.tipo) === 'Posgrado'))
+      ? sanitizeText(body.subtipo !== undefined ? body.subtipo : (existing?.subtipo || ''), 80)
+      : '',
+    disciplina:           sanitizeText(body.disciplina !== undefined ? body.disciplina : (existing?.disciplina || ''), 120),
+    modalidad:            sanitizeText(body.modalidad !== undefined ? body.modalidad : (existing?.modalidad || 'Híbrida'), 120) || 'Híbrida',
+    duracion:             sanitizeText(body.duracion !== undefined ? body.duracion : (existing?.duracion || ''), 80),
+    tags:                 (body.tags !== undefined ? parseTags(body.tags) : (existing?.tags || [])).map((t)=>sanitizeText(t,80)).filter(Boolean).slice(0,25),
+    disertantes:          (body.disertantes !== undefined ? parseTags(body.disertantes) : (existing?.disertantes || [])).map((d)=>sanitizeText(d,120)).filter(Boolean).slice(0,25),
     unidadesAcademicas:   unidades,
     unidadAcademica:      primaryUnidad, // backwards compat for public search
-    regional:             autoRegional,
-    descripcion:          String(body.descripcion||''),
-    contacto:             String(body.contacto||''),
-    telefonoContacto:     String(body.telefonoContacto||''),
-    requisitosTexto:      String(body.requisitosTexto||''),
-    formularioInscripcion: esCurso ? String(body.formularioInscripcion||'') : '',
-    programa:             esCurso ? String(body.programa||'') : '', // rich text for cursos
+    regional:             sanitizeText(autoRegional, 120),
+    descripcion:          sanitizeRichHtml(body.descripcion !== undefined ? body.descripcion : (existing?.descripcion || '')),
+    contacto:             sanitizeText(body.contacto !== undefined ? body.contacto : (existing?.contacto || ''), 180),
+    telefonoContacto:     sanitizeText(body.telefonoContacto !== undefined ? body.telefonoContacto : (existing?.telefonoContacto || ''), 60),
+    requisitosTexto:      sanitizeRichHtml(body.requisitosTexto !== undefined ? body.requisitosTexto : (existing?.requisitosTexto || '')),
+    formularioInscripcion: esCurso ? sanitizeUrl(body.formularioInscripcion !== undefined ? body.formularioInscripcion : (existing?.formularioInscripcion || '')) : '',
+    programa:             esCurso ? sanitizeRichHtml(body.programa !== undefined ? body.programa : (existing?.programa || '')) : '', // rich text for cursos
     documentos,
     inscripcionAbierta:   normalizeState((() => {
       if (body.inscripcionAbiertaValor!==undefined) {
@@ -401,10 +624,18 @@ async function buildCarreraFromBody(body, existing) {
 async function handleCreateCarrera(req) {
   const auth = requireRole(req, ROLES.UNIDADES);
   if (!auth.ok) return {status:auth.status,data:{error:auth.error}};
-  const body = await parseRequest(req);
-
-  // Log parsed fields for debugging
-  console.log('[createCarrera] nombre:', body.nombre, '| regional:', body.regional, '| unidades:', body.unidadesAcademicas, '| duracion:', body.duracion);
+  let body;
+  try { body = await parseRequest(req); }
+  catch (e) { return { status: e.status || 400, data: { error: e.message || 'No se pudo procesar la solicitud.' } }; }
+  const oversized = findOversizedUpload(body);
+  if (oversized) {
+    return {
+      status: 413,
+      data: { error: `El archivo "${oversized.filename}" supera el máximo de 20 MB por archivo.` },
+    };
+  }
+  const invalidUpload = findInvalidUpload(body);
+  if (invalidUpload) return { status: 400, data: { error: `Archivo inválido "${invalidUpload.filename}". ${invalidUpload.reason}` } };
 
   if (!String(body.nombre||'').trim()) return {status:400,data:{error:'Nombre obligatorio'}};
   // Regional is auto-calculated from unit, no validation needed
@@ -419,7 +650,7 @@ async function handleCreateCarrera(req) {
   const nueva = {
     id:nextId(db().carreras||[]),
     ...fields,
-    creadoPor:auth.user.username||auth.user.email,
+    creadoPor:auth.user.email,
     creadoEn:new Date().toISOString(),
   };
 
@@ -428,7 +659,7 @@ async function handleCreateCarrera(req) {
   if (!db().carreras) db().carreras=[];
   db().carreras.push(nueva);
   audit('CREAR', 'carrera', nueva.nombre, auth.user);
-  save();
+  await save();
   return {status:201,data:nueva};
 }
 
@@ -442,7 +673,18 @@ async function handleUpdateCarrera(req, id) {
   if (!canManageCarrera(auth.user, existing.unidadesAcademicas||[existing.unidadAcademica]))
     return {status:403,data:{error:'Sin permiso para esta carrera'}};
 
-  const body = await parseRequest(req);
+  let body;
+  try { body = await parseRequest(req); }
+  catch (e) { return { status: e.status || 400, data: { error: e.message || 'No se pudo procesar la solicitud.' } }; }
+  const oversized = findOversizedUpload(body);
+  if (oversized) {
+    return {
+      status: 413,
+      data: { error: `El archivo "${oversized.filename}" supera el máximo de 20 MB por archivo.` },
+    };
+  }
+  const invalidUpload = findInvalidUpload(body);
+  if (invalidUpload) return { status: 400, data: { error: `Archivo inválido "${invalidUpload.filename}". ${invalidUpload.reason}` } };
   // Regional auto-calculated from unit
 
   let fields;
@@ -455,7 +697,7 @@ async function handleUpdateCarrera(req, id) {
   const updated = {
     ...existing, ...fields,
     id:existing.id,
-    modificadoPor:auth.user.username||auth.user.email,
+    modificadoPor:auth.user.email,
     modificadoEn:new Date().toISOString(),
   };
   if (body.planEstudiosPDF?.filename)
@@ -463,11 +705,37 @@ async function handleUpdateCarrera(req, id) {
 
   db().carreras[idx]=updated;
   audit('EDITAR', 'carrera', updated.nombre, auth.user);
-  save();
+  await save();
   return {status:200,data:updated};
 }
 
-function handleDeleteCarrera(req, id, params) {
+async function handlePatchCarrera(req, body, id) {
+  const auth = requireRole(req, ROLES.UNIDADES);
+  if (!auth.ok) return {status:auth.status,data:{error:auth.error}};
+  const idx = (db().carreras||[]).findIndex(c=>c.id===parseInt(id));
+  if (idx===-1) return {status:404,data:{error:'Carrera no encontrada'}};
+  const c = db().carreras[idx];
+  if (!canManageCarrera(auth.user, c.unidadesAcademicas||[c.unidadAcademica]))
+    return {status:403,data:{error:'Sin permiso para esta carrera'}};
+  if (body.activo !== undefined) {
+    c.activo = normalizeState({valor:!!body.activo, fechaHasta:null});
+    if (!body.activo) c.inscripcionAbierta = normalizeState({valor:false, fechaHasta:null});
+    audit(body.activo?'ACTIVAR':'DESACTIVAR','carrera',c.nombre,auth.user);
+  }
+  if (body.inscripcionAbierta !== undefined) {
+    c.inscripcionAbierta = normalizeState({valor:!!body.inscripcionAbierta, fechaHasta:null});
+    if (body.inscripcionAbierta && !isActiveState(c.activo)) {
+      c.activo = normalizeState({valor:true, fechaHasta:null});
+    }
+    audit(body.inscripcionAbierta?'ABRIR_INSCRIPCION':'CERRAR_INSCRIPCION','carrera',c.nombre,auth.user);
+  }
+  c.modificadoPor = auth.user.email;
+  c.modificadoEn  = new Date().toISOString();
+  await save();
+  return {status:200, data:c};
+}
+
+async function handleDeleteCarrera(req, id, params) {
   const auth = requireRole(req, ROLES.UNIDADES);
   if (!auth.ok) return {status:auth.status,data:{error:auth.error}};
   if (auth.user.rol !== ROLES.ROOT) return {status:403,data:{error:'Solo el usuario root puede realizar esta acción'}};
@@ -479,16 +747,16 @@ function handleDeleteCarrera(req, id, params) {
     // Permanent delete
     db().carreras.splice(idx, 1);
     audit('ELIMINAR', 'carrera', nombre, auth.user);
-    save();
+    await save();
     return {status:200,data:{success:true,deleted:true,id:parseInt(id)}};
   }
   // Soft delete (deactivate)
   db().carreras[idx].activo=normalizeState({valor:false,fechaHasta:null});
   db().carreras[idx].inscripcionAbierta=normalizeState({valor:false,fechaHasta:null});
-  db().carreras[idx].desactivadoPor=auth.user.username;
+  db().carreras[idx].desactivadoPor=auth.user.email;
   db().carreras[idx].desactivadoEn=new Date().toISOString();
   audit('BAJA', 'carrera', nombre, auth.user);
-  save();
+  await save();
   return {status:200,data:{success:true,id:parseInt(id)}};
 }
 
@@ -499,7 +767,7 @@ async function handleAdminAPI(req, res, pathname, params, jsonResponse, readBody
   const r0=segs[0], id=segs[1], m=req.method;
 
   if (r0==='auth') {
-    if (segs[1]==='login'&&m==='POST')           {const b=await readBody(req);const r=await handleLogin(b);return jsonResponse(res,r.data,r.status);}
+    if (segs[1]==='login'&&m==='POST')           {const b=await readBody(req);const r=await handleLogin(req,b);return jsonResponse(res,r.data,r.status);}
     if (segs[1]==='change-password'&&m==='POST') {const b=await readBody(req);const r=await handleChangePassword(req,b);return jsonResponse(res,r.data,r.status);}
     if (segs[1]==='me'&&m==='GET')               {const a=requireAuth(req);return a.ok?jsonResponse(res,{user:a.user}):jsonResponse(res,{error:a.error},a.status);}
     if (segs[1]==='logout'&&m==='POST')          return jsonResponse(res,{success:true});
@@ -509,13 +777,15 @@ async function handleAdminAPI(req, res, pathname, params, jsonResponse, readBody
     if (!id&&m==='GET')   {const r=handleGetUsuarios(req);return jsonResponse(res,r.data,r.status);}
     if (!id&&m==='POST')  {const b=await readBody(req);const r=await handleCreateUsuario(req,b);return jsonResponse(res,r.data,r.status);}
     if (id&&m==='PUT')    {const b=await readBody(req);const r=await handleUpdateUsuario(req,b,id);return jsonResponse(res,r.data,r.status);}
-    if (id&&m==='DELETE') {const r=handleDeleteUsuario(req,id,params);return jsonResponse(res,r.data,r.status);}
+    if (id&&m==='DELETE') {const r=await handleDeleteUsuario(req,id,params);return jsonResponse(res,r.data,r.status);}
   }
   if (r0==='carreras') {
     if (!id&&m==='GET')   {const r=handleGetCarrerasAdmin(req,params);return jsonResponse(res,r.data,r.status);}
+    if (id&&m==='GET')    {const r=handleGetCarreraAdmin(req,id);return jsonResponse(res,r.data,r.status);}
     if (!id&&m==='POST')  {const r=await handleCreateCarrera(req);return jsonResponse(res,r.data,r.status);}
     if (id&&m==='PUT')    {const r=await handleUpdateCarrera(req,id);return jsonResponse(res,r.data,r.status);}
-    if (id&&m==='DELETE') {const r=handleDeleteCarrera(req,id,params);return jsonResponse(res,r.data,r.status);}
+    if (id&&m==='PATCH')  {const b=await readBody(req);const r=await handlePatchCarrera(req,b,id);return jsonResponse(res,r.data,r.status);}
+    if (id&&m==='DELETE') {const r=await handleDeleteCarrera(req,id,params);return jsonResponse(res,r.data,r.status);}
   }
   if (r0==='unidades'&&m==='GET') {
     const a=requireAuth(req);
@@ -528,11 +798,13 @@ async function handleAdminAPI(req, res, pathname, params, jsonResponse, readBody
     return jsonResponse(res,{
       unidadesAcademicas:db().unidadesAcademicas||[],
       regionales:db().regionales||[],
-      disciplinas:db().disciplinas||[],
+      disciplinas:ALLOWED_DISCIPLINAS,
       tiposDocumento:db().tiposDocumento||['Resolución','Disposición','Ordenanza'],
       organismos:db().organismos||['Consejo Superior','Ministerial','SPU','SSPU','CONEAU'],
       eadUnit:EAD_UNIT,
       accesoPublico: db().config?.acceso_publico !== false,
+      sitioEnConstruccion: db().config?.sitio_en_construccion === true,
+      imagenConstruccion: db().config?.imagen_construccion || DEFAULT_CONSTRUCTION_IMAGE,
     });
   }
 
@@ -542,12 +814,32 @@ async function handleAdminAPI(req, res, pathname, params, jsonResponse, readBody
     if (!a.ok) return jsonResponse(res,{error:a.error},a.status);
     if (a.user.rol!==ROLES.ROOT) return jsonResponse(res,{error:'Solo root puede cambiar esta configuración'},403);
     const b=await readBody(req);
-    if (!db().config) db().config={};
-    db().config.acceso_publico = b.value !== false;
-    db().config.acceso_publico_modificado_por = a.user.email;
-    db().config.acceso_publico_modificado_en  = new Date().toISOString();
-    save();
-    return jsonResponse(res,{success:true, acceso_publico: db().config.acceso_publico});
+    const config = ensureConfig();
+    config.acceso_publico = b.value !== false;
+    config.acceso_publico_modificado_por = a.user.email;
+    config.acceso_publico_modificado_en  = new Date().toISOString();
+    await save();
+    return jsonResponse(res,{success:true, acceso_publico: config.acceso_publico});
+  }
+
+  // Config: toggle "sitio en construcción" (root only)
+  if (r0==='config'&&segs[1]==='sitio-en-construccion'&&m==='POST') {
+    const a=requireAuth(req);
+    if (!a.ok) return jsonResponse(res,{error:a.error},a.status);
+    if (a.user.rol!==ROLES.ROOT) return jsonResponse(res,{error:'Solo root puede cambiar esta configuración'},403);
+    const b=await readBody(req);
+    const config = ensureConfig();
+    config.sitio_en_construccion = b.value === true;
+    const img = String(b.imageUrl || '').trim();
+    config.imagen_construccion = img || DEFAULT_CONSTRUCTION_IMAGE;
+    config.sitio_en_construccion_modificado_por = a.user.email;
+    config.sitio_en_construccion_modificado_en  = new Date().toISOString();
+    await save();
+    return jsonResponse(res,{
+      success:true,
+      sitio_en_construccion: config.sitio_en_construccion,
+      imagen_construccion: config.imagen_construccion,
+    });
   }
 
   // Audit log
@@ -556,18 +848,20 @@ async function handleAdminAPI(req, res, pathname, params, jsonResponse, readBody
     if(a.user.rol!==ROLES.ROOT)return jsonResponse(res,{error:'Solo root'},403);
     return jsonResponse(res,{logs:db().auditLog||[]});
   }
+  if (r0==='audit'&&segs[1]==='clear'&&m==='POST') {
+    const a=requireAuth(req);if(!a.ok)return jsonResponse(res,{error:a.error},a.status);
+    if(a.user.rol!==ROLES.ROOT)return jsonResponse(res,{error:'Solo root'},403);
+    db().auditLog=[];
+    await save();
+    return jsonResponse(res,{success:true,logs:0});
+  }
 
   // Backup export
   if (r0==='backup'&&segs[1]==='export'&&m==='GET') {
     const a=requireAuth(req);if(!a.ok)return jsonResponse(res,{error:a.error},a.status);
     if(a.user.rol!==ROLES.ROOT)return jsonResponse(res,{error:'Solo root'},403);
-    audit('EXPORT','backup','Exportación completa',a.user);save();
-    return jsonResponse(res,{
-      exportedAt:new Date().toISOString(),
-      version:'1.0',
-      carreras:db().carreras||[],
-      usuarios:(db().usuarios||[]).map(u=>{const{passwordHash,...r}=u;return r;}),
-    });
+    audit('EXPORT','backup','Exportación completa',a.user);await save();
+    return jsonResponse(res, buildBackupPayload(db()));
   }
 
   // Backup import
@@ -575,23 +869,23 @@ async function handleAdminAPI(req, res, pathname, params, jsonResponse, readBody
     const a=requireAuth(req);if(!a.ok)return jsonResponse(res,{error:a.error},a.status);
     if(a.user.rol!==ROLES.ROOT)return jsonResponse(res,{error:'Solo root'},403);
     const b=await readBody(req);
-    if(!b.carreras&&!b.usuarios)return jsonResponse(res,{error:'Formato inválido'},400);
-    if(b.carreras)db().carreras=b.carreras;
-    if(b.usuarios){
-      // Don't overwrite passwords — merge by email
-      const existing=db().usuarios||[];
-      b.usuarios.forEach(u=>{
-        const idx=existing.findIndex(e=>e.email===u.email);
-        if(idx===-1){existing.push({...u,passwordHash:'',mustChangePassword:true});}
-        else{existing[idx]={...existing[idx],...u,passwordHash:existing[idx].passwordHash};}
-      });
-      db().usuarios=existing;
+    try {
+      applyBackupPayload(db(), b);
+    } catch (err) {
+      return jsonResponse(res,{error:err.message||'Formato inválido'},err.status||400);
     }
-    audit('IMPORT','backup','Importación de datos',a.user);save();
+    audit('IMPORT','backup','Importación de datos',a.user);await save();
     return jsonResponse(res,{success:true,carreras:(db().carreras||[]).length,usuarios:(db().usuarios||[]).length});
   }
 
   return jsonResponse(res,{error:'Endpoint no encontrado'},404);
 }
 
-module.exports = {init, updateDb, handleAdminAPI};
+module.exports = {
+  init,
+  updateDb,
+  handleAdminAPI,
+  __test: {
+    buildCarreraFromBody,
+  },
+};

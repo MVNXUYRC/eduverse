@@ -1,9 +1,9 @@
-# render.yaml — EduVerse deployment on Render
+# render.yaml — EAD deployment on Render
 # Docs: https://render.com/docs/blueprint-spec
 
 services:
   - type: web
-    name: eduverse
+    name: ead
     runtime: node
     plan: free
     buildCommand: "echo 'No build step needed'"

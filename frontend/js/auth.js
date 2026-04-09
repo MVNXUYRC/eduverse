@@ -369,8 +369,9 @@ async function bootAuth() {
         }
       })
       .catch(() => {
-        // Network error — grant access if session exists
-        grantAccess(savedUser);
+        clearSession();
+        showLoginScreen();
+        showToast('No se pudo validar tu sesión. Iniciá sesión nuevamente.', 'error');
       });
   } else {
     showLoginScreen();

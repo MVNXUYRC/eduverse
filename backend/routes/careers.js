@@ -22,12 +22,14 @@ router.get('/', (req, res) => {
 
     // Text search: name, description, institution
     if (q && q.trim()) {
-      const query = q.trim().toLowerCase();
+      const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const query = norm(q.trim());
       results = results.filter(c =>
-        c.nombre.toLowerCase().includes(query) ||
-        c.descripcion.toLowerCase().includes(query) ||
-        c.institucion.toLowerCase().includes(query) ||
-        c.area.toLowerCase().includes(query)
+        norm(c.nombre).includes(query) ||
+        norm(c.descripcion).includes(query) ||
+        norm(c.institucion).includes(query) ||
+        norm(c.area).includes(query) ||
+        (c.disertantes || []).some(d => norm(d).includes(query))
       );
     }
 

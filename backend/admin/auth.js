@@ -6,7 +6,14 @@
 const crypto = require('crypto');
 
 const ROOT_EMAIL = 'joel_barrera@outlook.com';
-const JWT_SECRET = process.env.ADMIN_JWT_SECRET || 'unam-admin-secret-2025-change-in-prod';
+let JWT_SECRET = process.env.ADMIN_JWT_SECRET;
+if (!JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Falta ADMIN_JWT_SECRET en producción. Definí una clave fuerte para firmar tokens.');
+  }
+  JWT_SECRET = crypto.randomBytes(48).toString('hex');
+  console.warn('[security] ADMIN_JWT_SECRET no definido. Se usa clave efímera solo para desarrollo local.');
+}
 const TOKEN_TTL  = 8 * 60 * 60 * 1000; // 8h
 
 const ROLES      = { ROOT: 'root', INSTITUCIONAL: 'institucional', UNIDADES: 'unidades' };
@@ -76,7 +83,13 @@ function isActiveState(state) {
   const val = state.valor !== undefined ? state.valor : state.activo;
   if (!val) return false;
   if (!state.fechaHasta) return true; // sin fecha = indefinido
-  return new Date(state.fechaHasta) > new Date();
+  const raw = String(state.fechaHasta || '').trim();
+  if (!raw) return true;
+  // Si la fecha viene como YYYY-MM-DD, considerar activo hasta fin de ese día.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return new Date(`${raw}T23:59:59.999`) > new Date();
+  }
+  return new Date(raw) > new Date();
 }
 
 // Serializa estado al guardar
@@ -115,6 +128,11 @@ function toProperCase(str) {
 function hashPassword(plain) {
   return crypto.createHash('sha256').update(plain+JWT_SECRET).digest('hex');
 }
+function formatDNI(raw) {
+  const d = String(raw||'').replace(/\D/g,'');
+  // Format as X.XXX.XXX or XX.XXX.XXX
+  return d.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
 function formatPhone(raw) {
   const d = String(raw||'').replace(/\D/g,'');
   if (d.length < 8) return d;
@@ -143,6 +161,6 @@ module.exports = {
   requireAuth, requireRole,
   isActiveState, normalizeState,
   generatePassword, usernameFromEmail, toProperCase,
-  hashPassword, formatPhone,
+  hashPassword, formatPhone, formatDNI,
   validateEmail, validateDNI, validatePassword,
 };

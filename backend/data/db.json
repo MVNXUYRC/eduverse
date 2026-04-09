@@ -1,5 +1,121 @@
 {
-  "carreras": [],
+  "carreras": [
+    {
+      "id": 1,
+      "nombre": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "esCurso": false,
+      "tipo": "Grado",
+      "subtipo": "",
+      "disciplina": "Ciencias Aplicadas",
+      "modalidad": "100% Virtual",
+      "duracion": "2 años",
+      "tags": [
+        "conservación ambiental",
+        "desarrollo sustentable",
+        "gestión de recursos naturales",
+        "ecología",
+        "planificación territorial",
+        "ciencias ambientales",
+        "gestión ambiental",
+        "recursos naturales"
+      ],
+      "disertantes": [],
+      "unidadesAcademicas": [
+        "Facultad de Ciencias Forestales"
+      ],
+      "unidadAcademica": "Facultad de Ciencias Forestales",
+      "regional": "Eldorado",
+      "descripcion": "La carrera ofrece el dictado de espacios curriculares que permitirán al estudiante adquirir una titulación de grado como “Licenciado/a en Conservación y Desarrollo Ecorregional”. Proporciona una alternativa académica para profesionales técnicos que deseen complementar su formación, jerarquizando y otorgando mayores competencias en los ámbitos académicos, de investigación y extensión. Brinda a los profesionales herramientas necesarias para su desempeño como gestores en el territorio, en temáticas ambientales y sociales. Atiende a una realidad formativa con nuevos paradigmas en el manejo y la gestión del ambiente. Ofrece a los graduados/as una actividad profesional independiente, que le brindará la oportunidad de acceder a estudios de posgrado que le permitan adquirir nuevas herramientas y conocimientos específicos sobre la conservación y el desarrollo ecorregional.",
+      "contacto": "inscripciones@fcf.unam.edu.ar",
+      "telefonoContacto": "+54 3751 431526 - Int 107",
+      "requisitosTexto": "Al ser una propuesta a distacia, los requisitos serán solicitados en formato virtual, tanto en la preinscripción como en Autogestión.Las extensiones de archivo soportadas son: pdf, doc, docx, odt, png, jpg, jpeg, gif, bmpEl tamaño máximo permitido por archivo es: 20 MBTítulo secundarioTítulo de base de nivel superior: Técnico/a universitario/a guardaparque, técnico/a superior guardaparque, técnico/a universitario o superior en gestión ambiental u otros títulos de grado o pregrado en temas ambientales y biológicos. La carrera de base debe poseer una duración de dos o más años y contar con una carga horaria mínima de 1400 horas.Partida de nacimientoDNI (ambas caras)Fotografías tipo carnetCertificación de desempeño en actividades laborales afines a los objetivos de la carrera (la misma no es una condición excluyente, pero en caso de exceder el cupo previsto, serán considerados/as para la inscripción definitiva de la primera cohorte, quienes cumplimenten este requisito).",
+      "formularioInscripcion": "",
+      "programa": "",
+      "documentos": [
+        {
+          "tipo": "Resolución",
+          "organismo": "Consejo Superior",
+          "numero": "108",
+          "anio": "2023",
+          "pdf": "/uploads/resoluciones/1775732850834_RM_3242-2022.pdf"
+        }
+      ],
+      "inscripcionAbierta": {
+        "valor": false,
+        "fechaHasta": null
+      },
+      "activo": {
+        "valor": true,
+        "fechaHasta": null
+      },
+      "nueva": false,
+      "popular": false,
+      "planEstudiosPDF": "/uploads/planes/1775731843019_doc.pdf",
+      "creadoPor": "joel_barrera@outlook.com",
+      "creadoEn": "2026-04-09T10:32:22.782Z",
+      "modificadoPor": "joel_barrera@outlook.com",
+      "modificadoEn": "2026-04-09T11:07:30.835Z"
+    },
+    {
+      "id": 2,
+      "nombre": "Licenciatura en Marketing",
+      "esCurso": false,
+      "tipo": "Grado",
+      "subtipo": "",
+      "disciplina": "Ciencias Sociales",
+      "modalidad": "100% Virtual",
+      "duracion": "4 años",
+      "tags": [
+        "marketing: estrategia comercial",
+        "investigación de mercado",
+        "comportamiento del consumidor",
+        "publicidad y comunicación"
+      ],
+      "disertantes": [],
+      "unidadesAcademicas": [
+        "Facultad de Ciencias Económicas"
+      ],
+      "unidadAcademica": "Facultad de Ciencias Económicas",
+      "regional": "Posadas",
+      "descripcion": "El marketing actual requiere profesionales con una visión innovadora que enfrenten los desafíos de un entorno altamente competitivo, ya que conduce a cambios en los hábitos de consumo. Es importante incorporar profesionales con habilidades de liderazgo y un enfoque humano que agreguen valor, identifiquen oportunidades y desarrollen estrategias de marketing efectivas para promover el crecimiento económico. La Facultad de Ciencias Económicas pretende capacitar profesionales del marketing para fortalecer organizaciones públicas y privadas de la región que necesiten profesionalizar su gestión comercial.",
+      "contacto": "academica@fce.unam.edu.ar",
+      "telefonoContacto": "+54 0375 4480395",
+      "requisitosTexto": "El marketing actual requiere profesionales con una visión innovadora que enfrenten los desafíos de un entorno altamente competitivo, ya que conduce a cambios en los hábitos de consumo. Es importante incorporar profesionales con habilidades de liderazgo y un enfoque humano que agreguen valor, identifiquen oportunidades y desarrollen estrategias de marketing efectivas para promover el crecimiento económico. La Facultad de Ciencias Económicas pretende capacitar profesionales del marketing para fortalecer organizaciones públicas y privadas de la región que necesiten profesionalizar su gestión comercial.",
+      "formularioInscripcion": "",
+      "programa": "",
+      "documentos": [
+        {
+          "tipo": "Resolución",
+          "organismo": "Consejo Superior",
+          "numero": "108",
+          "anio": "2021",
+          "pdf": "/uploads/resoluciones/1775733621565_Resolucion_CS_105-2023.pdf"
+        },
+        {
+          "tipo": "Disposición",
+          "organismo": "SPU",
+          "numero": "3242",
+          "anio": "2022",
+          "pdf": "/uploads/resoluciones/1775733686897_DI_SSPU_201-2024.pdf"
+        }
+      ],
+      "inscripcionAbierta": {
+        "valor": true,
+        "fechaHasta": null
+      },
+      "activo": {
+        "valor": true,
+        "fechaHasta": null
+      },
+      "nueva": false,
+      "popular": false,
+      "planEstudiosPDF": "/uploads/planes/1775732951705_doc.pdf",
+      "creadoPor": "joel_barrera@outlook.com",
+      "creadoEn": "2026-04-09T11:09:11.685Z",
+      "modificadoPor": "joel_barrera@outlook.com",
+      "modificadoEn": "2026-04-09T11:21:26.897Z"
+    }
+  ],
   "unidadesAcademicas": [
     "Educación a Distancia",
     "Escuela Agrotécnica Eldorado",
@@ -43,7 +159,27 @@
     "Matemática",
     "Física"
   ],
-  "usuarios": [],
+  "usuarios": [
+    {
+      "id": 1,
+      "nombre": "Test",
+      "apellido": "1",
+      "dni": "12.345.678",
+      "email": "olivera.natalia.37@gmail.com",
+      "telefono": "+54 9 3764 73-1435",
+      "rol": "institucional",
+      "unidades": [],
+      "activo": true,
+      "creadoPor": "joel_barrera@outlook.com",
+      "creadoEn": "2026-04-09T01:22:25.692Z",
+      "ultimoAcceso": null,
+      "passwordHash": "69a077e369464857068589a122b4d75fe767fc0370aee94bc4418e09403ba810",
+      "mustChangePassword": true,
+      "passwordChangedAt": null,
+      "modificadoPor": "joel_barrera@outlook.com",
+      "modificadoEn": "2026-04-09T01:30:41.185Z"
+    }
+  ],
   "sesiones": [],
   "tiposDocumento": [
     "Resolución",
@@ -60,6 +196,175 @@
   "config": {
     "acceso_publico": true,
     "acceso_publico_modificado_por": null,
-    "acceso_publico_modificado_en": null
-  }
+    "acceso_publico_modificado_en": null,
+    "sitio_en_construccion": false,
+    "imagen_construccion": "/public/site-under-construction.svg",
+    "sitio_en_construccion_modificado_por": "joel_barrera@outlook.com",
+    "sitio_en_construccion_modificado_en": "2026-04-09T10:27:48.259Z",
+    "root_password_hash": "846b194f9718da0d7a51300e475122fba1a37b2fbc45d00485c5770f8d0e4bdd",
+    "root_password_changed_at": "2026-04-09T01:11:25.191Z",
+    "root_password_changed_by": "joel_barrera@outlook.com"
+  },
+  "auditLog": [
+    {
+      "ts": "2026-04-09T11:21:26.897Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Marketing",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T11:20:21.566Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Marketing",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T11:09:28.228Z",
+      "action": "ABRIR_INSCRIPCION",
+      "entity": "carrera",
+      "detail": "Licenciatura en Marketing",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T11:09:11.736Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Marketing",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T11:09:11.722Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Marketing",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T11:09:11.705Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Marketing",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T11:09:11.685Z",
+      "action": "CREAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Marketing",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T11:07:30.835Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T11:06:55.823Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T11:05:24.981Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T11:03:27.033Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T10:51:05.427Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T10:50:43.020Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T10:37:58.796Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T10:36:07.222Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T10:32:29.351Z",
+      "action": "EDITAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T10:32:22.782Z",
+      "action": "CREAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T10:30:49.927Z",
+      "action": "ELIMINAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T10:27:33.553Z",
+      "action": "CREAR",
+      "entity": "carrera",
+      "detail": "Licenciatura en Conservación y Desarrollo Ecorregional",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    },
+    {
+      "ts": "2026-04-09T01:22:25.693Z",
+      "action": "CREAR",
+      "entity": "usuario",
+      "detail": "olivera.natalia.37@gmail.com",
+      "user": "joel_barrera@outlook.com",
+      "rol": "root"
+    }
+  ]
 }
