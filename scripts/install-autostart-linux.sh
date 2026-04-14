@@ -30,4 +30,5 @@ DESKTOP
 echo "Autoarranque instalado."
 echo "Launcher: $LAUNCHER"
 echo "Desktop entry: $DESKTOP_FILE"
+echo "El autostart usa el modo estable 'start' (sin watch) para evitar caídas del backend en segundo plano."
 echo "Reiniciá sesión para probarlo."

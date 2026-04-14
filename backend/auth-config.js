@@ -5,11 +5,15 @@
  * Agregá o quitá emails según necesites.
  */
 
-const ALLOWED_EMAILS = [
-  "joel_barrera@outlook.com",   // root — siempre autorizado
+const envEmails = String(process.env.ALLOWED_PUBLIC_EMAILS || '')
+  .split(',')
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+const rootEmail = String(process.env.ROOT_EMAIL || 'joel_barrera@outlook.com').trim().toLowerCase();
 
-  // Agregá más emails autorizados abajo:
-  // "otro@unam.edu.ar",
-];
+const ALLOWED_EMAILS = [...new Set([
+  rootEmail,
+  ...envEmails,
+])];
 
 module.exports = { ALLOWED_EMAILS };

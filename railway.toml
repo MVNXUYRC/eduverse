@@ -10,3 +10,8 @@ healthcheckPath = "/api/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
+
+[deploy.env]
+NODE_ENV = "production"
+REQUIRE_HTTPS = "true"
+TRUST_PROXY_HEADERS = "true"

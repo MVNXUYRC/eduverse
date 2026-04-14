@@ -46,6 +46,18 @@ class PgStore {
       const cfg = await client.query('SELECT key, value FROM app_config');
       const logs = await client.query('SELECT ts, action, entity, detail, user_email, rol FROM audit_logs ORDER BY ts DESC LIMIT 500');
       const lookups = await client.query('SELECT category, value, ord FROM lookup_values ORDER BY category, ord');
+      const interesados = await client.query('SELECT id, email, career_id, unidad_academica_id, created_at, informed_manual, informed_at, informed_by FROM career_interested ORDER BY created_at DESC');
+      const newsletterSubscriptions = await client.query(`
+        SELECT id, email, source, active, created_at, updated_at, last_sent_at
+        FROM newsletter_subscriptions
+        ORDER BY created_at DESC
+      `);
+      const newsletterDispatchLog = await client.query(`
+        SELECT id, scheduled_for, run_at, status, changes_detected, recipients_total, sent_count, message
+        FROM newsletter_dispatch_logs
+        ORDER BY run_at DESC
+        LIMIT 200
+      `);
 
       const unitsByCareer = new Map();
       const tagsByCareer = new Map();
@@ -76,7 +88,10 @@ class PgStore {
       }
 
       const carreras = careers.rows.map((r) => {
-        const extra = r.extra || {};
+        const extra = { ...(r.extra || {}) };
+        delete extra.proximamente;
+        const alcancesTitulo = r.alcances_titulo || extra.alcancesTitulo || '';
+        delete extra.alcancesTitulo;
         return {
           id: r.id,
           nombre: r.nombre,
@@ -95,12 +110,14 @@ class PgStore {
           contacto: r.contacto || '',
           telefonoContacto: r.telefono_contacto || '',
           requisitosTexto: r.requisitos_texto || '',
+          alcancesTitulo,
           formularioInscripcion: r.formulario_inscripcion || '',
           programa: r.programa || '',
           documentos: docsByCareer.get(r.id) || [],
           inscripcionAbierta: { valor: !!r.inscripcion_abierta_valor, fechaHasta: r.inscripcion_abierta_fecha_hasta || null },
           activo: { valor: !!r.activo_valor, fechaHasta: r.activo_fecha_hasta || null },
           nueva: !!r.nueva,
+          proximamente: !!r.proximamente,
           popular: !!r.popular,
           planEstudiosPDF: r.plan_estudios_pdf || null,
           creadoPor: r.creado_por || null,
@@ -115,6 +132,7 @@ class PgStore {
 
       const usuarios = users.rows.map((u) => ({
         id: u.id,
+        login: u.login || null,
         nombre: u.nombre,
         apellido: u.apellido,
         dni: u.dni,
@@ -144,19 +162,48 @@ class PgStore {
         lookupMap[l.category].push(l.value);
       }
 
-      return {
-        carreras,
-        usuarios,
-        config,
-        auditLog: logs.rows.map((l) => ({
+        return {
+          carreras,
+          usuarios,
+          config,
+          auditLog: logs.rows.map((l) => ({
           ts: l.ts,
           action: l.action,
           entity: l.entity,
           detail: l.detail,
-          user: l.user_email,
-          rol: l.rol,
-        })),
-        unidadesAcademicas: lookupMap.unidadesAcademicas || [],
+            user: l.user_email,
+            rol: l.rol,
+          })),
+          interesados: interesados.rows.map((i) => ({
+            id: Number(i.id),
+            email: i.email || '',
+            carreraId: Number(i.career_id),
+            unidadAcademica: i.unidad_academica_id || '',
+            fechaCreacion: i.created_at || null,
+            informadoManual: i.informed_manual === true,
+            informadoEn: i.informed_at || null,
+            informadoPor: i.informed_by || null,
+          })),
+          newsletterSubscriptions: newsletterSubscriptions.rows.map((s) => ({
+            id: Number(s.id),
+            email: String(s.email || '').trim().toLowerCase(),
+            source: s.source || 'sitio',
+            activo: !!s.active,
+            fechaAlta: s.created_at || null,
+            actualizadoEn: s.updated_at || null,
+            ultimoEnvio: s.last_sent_at || null,
+          })),
+          newsletterDispatchLog: newsletterDispatchLog.rows.map((l) => ({
+            id: Number(l.id),
+            scheduledFor: l.scheduled_for || null,
+            runAt: l.run_at || null,
+            status: l.status || 'unknown',
+            changesDetected: !!l.changes_detected,
+            recipientsTotal: Number(l.recipients_total || 0),
+            sentCount: Number(l.sent_count || 0),
+            message: l.message || '',
+          })),
+          unidadesAcademicas: lookupMap.unidadesAcademicas || [],
         regionales: lookupMap.regionales || [],
         localidades: lookupMap.localidades || [],
         disciplinas: lookupMap.disciplinas || [],
@@ -173,14 +220,15 @@ class PgStore {
     try {
       await client.query('BEGIN');
 
-      await client.query('TRUNCATE TABLE career_documents, career_speakers, career_tags, career_units, careers, users_admin, app_config, audit_logs, lookup_values RESTART IDENTITY CASCADE');
+      await client.query('TRUNCATE TABLE newsletter_dispatch_logs, newsletter_subscriptions, career_interested, career_documents, career_speakers, career_tags, career_units, careers, users_admin, app_config, audit_logs, lookup_values RESTART IDENTITY CASCADE');
 
       for (const c of toArray(state.carreras)) {
         const extra = { ...c };
         const knownKeys = new Set([
           'id', 'nombre', 'esCurso', 'tipo', 'subtipo', 'disciplina', 'modalidad', 'duracion', 'tags', 'disertantes',
           'unidadesAcademicas', 'unidadAcademica', 'regional', 'descripcion', 'contacto', 'telefonoContacto', 'requisitosTexto',
-          'formularioInscripcion', 'programa', 'documentos', 'inscripcionAbierta', 'activo', 'nueva', 'popular',
+          'alcancesTitulo',
+          'formularioInscripcion', 'programa', 'documentos', 'inscripcionAbierta', 'activo', 'nueva', 'proximamente', 'popular',
           'planEstudiosPDF', 'creadoPor', 'creadoEn', 'modificadoPor', 'modificadoEn', 'desactivadoPor', 'desactivadoEn',
         ]);
         for (const key of Object.keys(extra)) {
@@ -190,13 +238,13 @@ class PgStore {
         await client.query(
           `INSERT INTO careers (
             id, nombre, es_curso, tipo, subtipo, disciplina, modalidad, duracion, descripcion, contacto, telefono_contacto,
-            requisitos_texto, formulario_inscripcion, programa, unidad_academica, regional,
+            requisitos_texto, alcances_titulo, formulario_inscripcion, programa, unidad_academica, regional,
             inscripcion_abierta_valor, inscripcion_abierta_fecha_hasta, activo_valor, activo_fecha_hasta,
-            nueva, popular, plan_estudios_pdf, creado_por, creado_en, modificado_por, modificado_en,
+            nueva, proximamente, popular, plan_estudios_pdf, creado_por, creado_en, modificado_por, modificado_en,
             desactivado_por, desactivado_en, extra
           ) VALUES (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
-            $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+            $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
           )`,
           [
             c.id,
@@ -211,6 +259,7 @@ class PgStore {
             c.contacto || '',
             c.telefonoContacto || '',
             c.requisitosTexto || '',
+            c.alcancesTitulo || '',
             c.formularioInscripcion || '',
             c.programa || '',
             c.unidadAcademica || (toArray(c.unidadesAcademicas)[0] || ''),
@@ -220,6 +269,7 @@ class PgStore {
             c.activo?.valor !== undefined ? !!c.activo.valor : c.activo !== false,
             c.activo?.fechaHasta || null,
             !!c.nueva,
+            !!c.proximamente,
             !!c.popular,
             c.planEstudiosPDF || null,
             c.creadoPor || null,
@@ -252,14 +302,15 @@ class PgStore {
       for (const u of toArray(state.usuarios)) {
         await client.query(
           `INSERT INTO users_admin (
-            id, nombre, apellido, dni, email, telefono, rol, unidades, activo, creado_por, creado_en,
+            id, login, nombre, apellido, dni, email, telefono, rol, unidades, activo, creado_por, creado_en,
             ultimo_acceso, modificado_por, modificado_en, desactivado_por, desactivado_en,
             password_hash, must_change_password, password_changed_at
           ) VALUES (
-            $1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+            $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
           )`,
           [
             u.id,
+            u.login || null,
             u.nombre || '',
             u.apellido || '',
             u.dni || '',
@@ -290,6 +341,57 @@ class PgStore {
         await client.query(
           'INSERT INTO audit_logs (ts, action, entity, detail, user_email, rol) VALUES ($1,$2,$3,$4,$5,$6)',
           [l.ts || new Date().toISOString(), l.action || '', l.entity || '', l.detail || '', l.user || '?', l.rol || '?']
+        );
+      }
+
+      for (const i of toArray(state.interesados)) {
+        const careerId = Number(i.carreraId || 0);
+        if (!careerId) continue;
+        await client.query(
+          'INSERT INTO career_interested (id, email, career_id, unidad_academica_id, created_at, informed_manual, informed_at, informed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+          [
+            i.id || null,
+            String(i.email || '').trim().toLowerCase(),
+            careerId,
+            i.unidadAcademica || '',
+            i.fechaCreacion || new Date().toISOString(),
+            i.informadoManual === true,
+            i.informadoEn || null,
+            i.informadoPor || null,
+          ]
+        );
+      }
+
+      for (const s of toArray(state.newsletterSubscriptions)) {
+        const email = String(s.email || '').trim().toLowerCase();
+        if (!email) continue;
+        await client.query(
+          'INSERT INTO newsletter_subscriptions (id, email, source, active, created_at, updated_at, last_sent_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+          [
+            s.id || null,
+            email,
+            s.source || 'sitio',
+            s.activo !== false,
+            s.fechaAlta || new Date().toISOString(),
+            s.actualizadoEn || s.fechaAlta || new Date().toISOString(),
+            s.ultimoEnvio || null,
+          ]
+        );
+      }
+
+      for (const l of toArray(state.newsletterDispatchLog).slice(0, 200)) {
+        await client.query(
+          'INSERT INTO newsletter_dispatch_logs (id, scheduled_for, run_at, status, changes_detected, recipients_total, sent_count, message) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+          [
+            l.id || null,
+            l.scheduledFor || l.runAt || new Date().toISOString(),
+            l.runAt || new Date().toISOString(),
+            l.status || 'unknown',
+            !!l.changesDetected,
+            Number(l.recipientsTotal || 0),
+            Number(l.sentCount || 0),
+            l.message || '',
+          ]
         );
       }
 

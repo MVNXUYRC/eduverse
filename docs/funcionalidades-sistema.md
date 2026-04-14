@@ -12,7 +12,9 @@ Arquitectura principal:
 - Backend Node.js (`backend/server-standalone.js`) con API pública y API admin.
 - Frontend SPA público (`frontend/index.html` + `frontend/js/app.js`).
 - Frontend cPanel (`frontend/cpanel.html`).
-- Persistencia en JSON o PostgreSQL según configuración.
+- Persistencia con selección automática:
+  - PostgreSQL si hay configuración DB disponible o `PERSISTENCE_MODE=postgres`.
+  - JSON legado si `PERSISTENCE_MODE=json` o si `PERSISTENCE_MODE=auto` sin configuración DB.
 
 ## 2) Módulo público (índice y detalle)
 
@@ -61,11 +63,13 @@ Arquitectura principal:
 - Endpoint `POST /api/auth/verify` para validación de acceso (modo restringido).
 - Puede validar contra allow-list estática y usuarios activos en base.
 - Endpoint `GET /api/access-mode` informa estado de acceso público y sitio en construcción.
+- En modo restringido, el frontend usa Google Identity Services y toma `GOOGLE_CLIENT_ID` desde la respuesta de `GET /api/access-mode`.
 
 ## 4) cPanel administrativo
 
 ## 4.1 Autenticación y sesión
-- Login por correo/contraseña (`/admin/api/auth/login`).
+- Login por usuario técnico o correo + contraseña (`/admin/api/auth/login`).
+- `root` ingresa con un `login` técnico configurable, sin requerir exponer su correo como credencial de acceso.
 - Perfil (`/admin/api/auth/me`), logout, cambio de contraseña.
 - Protección por JWT y controles por rol.
 
@@ -89,6 +93,7 @@ Arquitectura principal:
 - Evita inconsistencias en carreras nuevas con documentación pesada.
 
 ## 4.4 Gestión de usuarios administrativos
+- Cada usuario administrativo posee un `login` único además del correo institucional.
 - CRUD con reglas de rol.
 - Reactivación/desactivación.
 - Reset/cambio de contraseña.
@@ -103,6 +108,7 @@ Arquitectura principal:
 ## 4.6 Auditoría y backup
 - Auditoría de acciones críticas (incluye inicios de sesión).
 - Export/import de backup completo.
+- Las vistas funcionales de auditoría y los backups exportados reemplazan el correo del `root` por su identidad técnica (`ROOT_LOGIN`).
 - Limpieza de logs (solo root).
 
 ## 5) API y contratos funcionales
@@ -125,11 +131,11 @@ Arquitectura principal:
 ## 6) Persistencia y modo de ejecución
 
 ## 6.1 Modo JSON
-- Fuente principal: `backend/data/db.json`.
-- Útil para desarrollo rápido y entorno simple.
+- Fuente principal: `backend/data/db.json` o `JSON_DB_PATH`.
+- Útil para desarrollo rápido, recuperación local o arranque sin base.
 
 ## 6.2 Modo PostgreSQL
-- Activado al definir `DATABASE_URL`.
+- Activado al definir `DATABASE_URL`, `DB_*` o `PERSISTENCE_MODE=postgres`.
 - Esquema normalizado con tablas de carreras, documentos, usuarios, auditoría y catálogos.
 - Se reconstruye objeto de dominio para mantener contrato API estable.
 
@@ -174,3 +180,4 @@ Puntos a priorizar si se extiende el sistema:
 - Agregar más tests de integración para flujo cPanel -> API pública.
 - Añadir observabilidad de eventos funcionales (errores 413, asociaciones incompletas, fallos de render PDF).
 - Definir versionado de contrato API para integraciones externas.
+t

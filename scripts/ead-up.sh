@@ -31,14 +31,37 @@ DB_NAME="${DB_NAME:-ead}"
 DB_USER="${DB_USER:-ead_user}"
 AUTO_START_DB="${AUTO_START_DB:-true}"
 PG_DOCKER_CONTAINER="${PG_DOCKER_CONTAINER:-ead-postgres}"
+PERSISTENCE_MODE="${PERSISTENCE_MODE:-auto}"
 
-# PostgreSQL is the primary persistence backend.
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  if [[ -z "${DB_HOST:-}" || -z "${DB_NAME:-}" || -z "${DB_USER:-}" ]]; then
-    echo "Error: falta configuración de PostgreSQL."
-    echo "Definí DATABASE_URL o DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD en .env.local o .env."
+HAS_PG_CONFIG="false"
+if [[ -n "${DATABASE_URL:-}" || ( -n "${DB_HOST:-}" && -n "${DB_NAME:-}" && -n "${DB_USER:-}" ) ]]; then
+  HAS_PG_CONFIG="true"
+fi
+
+USE_POSTGRES="false"
+case "$PERSISTENCE_MODE" in
+  postgres|postgresql)
+    USE_POSTGRES="true"
+    ;;
+  json)
+    USE_POSTGRES="false"
+    ;;
+  auto)
+    if [[ "$HAS_PG_CONFIG" == "true" ]]; then
+      USE_POSTGRES="true"
+    fi
+    ;;
+  *)
+    echo "Modo de persistencia inválido: $PERSISTENCE_MODE"
+    echo "Usá PERSISTENCE_MODE=auto|json|postgres"
     exit 1
-  fi
+    ;;
+esac
+
+if [[ "$USE_POSTGRES" == "true" && "$HAS_PG_CONFIG" != "true" ]]; then
+  echo "Error: PERSISTENCE_MODE=$PERSISTENCE_MODE requiere configuración PostgreSQL."
+  echo "Definí DATABASE_URL o DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD en .env.local o .env."
+  exit 1
 fi
 
 if ! command -v node >/dev/null 2>&1; then
@@ -70,6 +93,10 @@ if [[ ! -d "$ROOT_DIR/node_modules" ]]; then
 fi
 
 maybe_start_postgres_container() {
+  if [[ "$USE_POSTGRES" != "true" ]]; then
+    return
+  fi
+
   if [[ "$AUTO_START_DB" != "true" ]]; then
     return
   fi
@@ -99,6 +126,10 @@ maybe_start_postgres_container() {
 }
 
 wait_for_postgres() {
+  if [[ "$USE_POSTGRES" != "true" ]]; then
+    return
+  fi
+
   if [[ "$AUTO_START_DB" != "true" ]]; then
     return
   fi
@@ -123,31 +154,74 @@ wait_for_postgres() {
 maybe_start_postgres_container
 wait_for_postgres
 
+if [[ "$USE_POSTGRES" == "true" ]]; then
+  echo "Persistencia: PostgreSQL"
+else
+  echo "Persistencia: JSON (${JSON_DB_PATH:-backend/data/db.json})"
+fi
+
 case "$MODE" in
   dev)
-    START_CMD="exec node --watch backend/server-standalone.js"
+    START_CMD="exec node backend/server-standalone.js"
     ;;
   prod|start)
     START_CMD="exec node backend/server-standalone.js"
     ;;
+  watch)
+    START_CMD="exec node --watch backend/server-standalone.js"
+    ;;
   *)
     echo "Modo inválido: $MODE"
-    echo "Uso: ./scripts/ead-up.sh [dev|prod]"
+    echo "Uso: ./scripts/ead-up.sh [dev|watch|prod]"
     exit 1
     ;;
 esac
 
-echo "Iniciando proyecto en modo '$MODE'..."
-if [[ -n "$ENV_FILE" ]]; then
-  nohup bash -lc "set -a; . '$ENV_FILE'; set +a; $START_CMD" >> "$LOG_FILE" 2>&1 &
-else
-  nohup bash -lc "$START_CMD" >> "$LOG_FILE" 2>&1 &
+if command -v ss >/dev/null 2>&1 && ss -ltn "( sport = :$PORT )" | grep -q ":$PORT"; then
+  echo "Error: el puerto $PORT ya está en uso."
+  echo "Liberalo o cambiá PORT en .env.local/.env antes de iniciar."
+  exit 1
 fi
-PID=$!
+
+start_detached() {
+  if [[ -n "$ENV_FILE" ]]; then
+    nohup setsid bash -lc "cd '$ROOT_DIR'; set -a; . '$ENV_FILE'; set +a; $START_CMD" </dev/null >> "$LOG_FILE" 2>&1 &
+  else
+    nohup setsid bash -lc "cd '$ROOT_DIR'; $START_CMD" </dev/null >> "$LOG_FILE" 2>&1 &
+  fi
+  echo $!
+}
+
+wait_for_health() {
+  local pid="$1"
+  local retries=30
+  local i
+  for i in $(seq 1 "$retries"); do
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      return 1
+    fi
+    if command -v curl >/dev/null 2>&1; then
+      if curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then
+        return 0
+      fi
+    else
+      sleep 1
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+echo "Iniciando proyecto en modo '$MODE'..."
+if [[ "$MODE" == "watch" ]]; then
+  echo "Aviso: 'watch' reinicia el proceso automáticamente y no es el modo recomendado para dejarlo corriendo como servicio."
+fi
+
+PID="$(start_detached)"
 echo "$PID" > "$PID_FILE"
 
-sleep 2
-if kill -0 "$PID" >/dev/null 2>&1; then
+if wait_for_health "$PID"; then
   echo "Proyecto levantado correctamente (PID: $PID)."
   echo "URL: http://localhost:$PORT"
   echo "Logs: $LOG_FILE"

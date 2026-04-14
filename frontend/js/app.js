@@ -21,7 +21,7 @@ const state = {
   page: 'home',
   filters: { q: '', tipo: [], subtipo: [], disciplina: [], modalidad: [], unidad: [], regional: [], esCurso: null, inscripcionAbierta: null },
   results: [], meta: { total: 0, page: 1, totalPages: 1 },
-  sort: 'nombre',
+  sort: 'reciente',
   loading: false,
 };
 const EMPTY_FILTERS = { q: '', tipo: [], subtipo: [], disciplina: [], modalidad: [], unidad: [], regional: [], esCurso: null, inscripcionAbierta: null };
@@ -31,6 +31,30 @@ const PDF_VIEWERS = new Map();
 
 // ── Utilities ─────────────────────────────────────────────
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+function safePublicUrl(value, { allowMailto = false, allowRelative = false } = {}) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (allowRelative && (raw.startsWith('/uploads/') || raw.startsWith('/public/') || raw.startsWith('/api/'))) return raw;
+  try {
+    const parsed = new URL(raw);
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol === 'http:' || protocol === 'https:' || (allowMailto && protocol === 'mailto:')) return raw;
+  } catch {
+    return '';
+  }
+  return '';
+}
 
 function showToast(msg, type = 'info') {
   const c = document.getElementById('toast-container');
@@ -42,6 +66,89 @@ function showToast(msg, type = 'info') {
 }
 window.showToast = showToast;
 
+async function sendNewsletterSubscription(email, source = 'sitio') {
+  return apiFetch('/newsletter/subscribe', {
+    method: 'POST',
+    body: JSON.stringify({ email, source }),
+  });
+}
+
+function persistNewsletterEmailLocal(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
+  if (!valid) return;
+  try {
+    const key = 'unam_newsletter_emails';
+    const current = JSON.parse(localStorage.getItem(key) || '[]');
+    const next = [];
+    const seen = new Set();
+    (Array.isArray(current) ? current : []).forEach((entry) => {
+      const emailValue = typeof entry === 'string' ? entry : entry?.email;
+      const dateValue = typeof entry === 'object' ? entry?.fechaAlta : null;
+      const cleanEmail = String(emailValue || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return;
+      if (seen.has(cleanEmail)) return;
+      seen.add(cleanEmail);
+      next.push({
+        email: cleanEmail,
+        fechaAlta: dateValue || null,
+        activo: typeof entry === 'object' ? entry?.activo !== false : true,
+      });
+    });
+    if (!seen.has(normalized)) {
+      next.push({
+        email: normalized,
+        fechaAlta: new Date().toISOString(),
+        activo: true,
+      });
+    }
+    localStorage.setItem(key, JSON.stringify(next));
+  } catch {}
+}
+
+function submitNewsletterFrom(inputId, source = 'sitio') {
+  const input = document.getElementById(inputId);
+  const email = String(input?.value || '').trim().toLowerCase();
+  if (!email) {
+    showToast('Ingresá un correo electrónico.', 'error');
+    return false;
+  }
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!valid) {
+    showToast('Ingresá un correo electrónico válido.', 'error');
+    return false;
+  }
+  sendNewsletterSubscription(email, source)
+    .then((resp) => {
+      if (resp?.alreadySubscribed) {
+        showToast('Ese correo ya está registrado.', 'info');
+        if (input) input.value = '';
+        return;
+      }
+      persistNewsletterEmailLocal(email);
+      if (input) input.value = '';
+      showToast('¡Suscripción registrada!', 'success');
+    })
+    .catch((e) => {
+      const msg = String(e?.message || '').toLowerCase();
+      if (msg.includes('ya está registrado') || msg.includes('ya se encuentra registrado')) {
+        if (input) input.value = '';
+        showToast('Ese correo ya está registrado.', 'info');
+        return;
+      }
+      if (msg.includes('newsletter no operativo')) {
+        showToast('El newsletter no está operativo en este momento.', 'error');
+        return;
+      }
+      // Fallback temporal: si el backend no está actualizado, preservamos el registro local.
+      persistNewsletterEmailLocal(email);
+      if (input) input.value = '';
+      showToast('Suscripción registrada localmente. Actualizá el backend para sincronizarla en cPanel.', 'info');
+    });
+  return false;
+}
+window.submitNewsletterFrom = submitNewsletterFrom;
+
 // ── API ───────────────────────────────────────────────────
 async function apiFetch(path, opts = {}) {
   const method = (opts.method || 'GET').toUpperCase();
@@ -50,13 +157,21 @@ async function apiFetch(path, opts = {}) {
     url += (url.includes('?') ? '&' : '?') + '_ts=' + Date.now();
   }
   const res = await fetch(url, { cache: 'no-store', headers: { 'Content-Type': 'application/json' }, ...opts });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const raw = await res.text();
+  let data = {};
+  if (raw) {
+    try { data = JSON.parse(raw); } catch { data = {}; }
+  }
+  if (!res.ok) { const err = new Error(data.error || `HTTP ${res.status}`); err.errorCode = data.errorCode || null; throw err; }
+  return data;
 }
 
 async function fetchFeatured()  { return apiFetch('/careers/featured'); }
 async function fetchFilters()   { return apiFetch('/careers/filters'); }
 async function fetchCareer(id)  { return apiFetch(`/careers/${id}`); }
+async function registerCareerInterest(id, email) {
+  return apiFetch(`/careers/${id}/interesados`, { method: 'POST', body: JSON.stringify({ email }) });
+}
 
 async function searchCareers(params = {}) {
   const q = new URLSearchParams();
@@ -85,7 +200,7 @@ function navigate(page, data = null) {
   state.page = page;
   document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
   // Map page names to nav IDs
-  const navIdMap = { home: 'nav-home', search: 'nav-search', quienes: 'nav-quienes', contacto: 'nav-contacto' };
+  const navIdMap = { home: 'nav-home', search: 'nav-search', novedades: 'nav-novedades', quienes: 'nav-quienes', contacto: 'nav-contacto' };
   const navId = navIdMap[page] || ('nav-' + page);
   const nl = document.getElementById(navId);
   if (nl) nl.classList.add('active');
@@ -125,7 +240,7 @@ function hydrateRouteFromHash() {
   if (!raw) return 'home';
   const [pageRaw, qsRaw = ''] = raw.split('?');
   const page = pageRaw || 'home';
-  const allowed = new Set(['home', 'search', 'quienes', 'contacto', 'unidades', 'admin']);
+  const allowed = new Set(['home', 'search', 'novedades', 'quienes', 'contacto', 'unidades', 'admin']);
   if (!allowed.has(page)) return 'home';
   if (page !== 'search') return page;
 
@@ -156,7 +271,7 @@ function render() {
     renderSiteConstruction(app);
     return;
   }
-  const pages = { home: renderHome, search: renderSearch, admin: renderAdmin, unidades: renderUnidades };
+  const pages = { home: renderHome, search: renderSearch, novedades: renderNovedades, admin: renderAdmin, unidades: renderUnidades };
   const placeholders = ['quienes', 'contacto'];
   if (pages[state.page]) pages[state.page](app);
   else if (placeholders.includes(state.page)) renderPlaceholder(app, state.page);
@@ -215,8 +330,9 @@ async function renderHome(app) {
       if (facIt)      facIt.style.display    = s.facultades > 0 ? '' : 'none';
       if (virt)       virt.style.display     = s.tiene100Virtual ? '' : 'none';
     }
-    // Sections: inscripciones abiertas → nuevas → disciplinas
+    // Sections: próximamente → inscripciones abiertas → nuevas → disciplinas
     document.getElementById('featured-sections').innerHTML =
+      proximamenteSection(data.proximamente) +
       inscripcionSection(data.inscripcionAbierta) +
       nuevasSection(data.nuevas) +
       disciplinasSection(data.disciplinas);
@@ -300,7 +416,16 @@ function inscripcionSection(items) {
   if (!items?.length) return '';
   return `<section class="section" style="padding-top:0"><div class="section-inner">
     <div class="section-header">
-      <div><div class="section-label" style="color:var(--unam-cyan)">propuestas disponibles</div><h2 class="section-title">¡Inscripciones abiertas!</h2></div>
+      <div><div class="section-label" style="color:var(--unam-cyan)">propuestas disponibles</div><h2 class="section-title">Inscripciones abiertas</h2></div>
+    </div>
+    <div class="cards-grid animate-in">${items.map(c => careerCard(c)).join('')}</div>
+  </div></section>`;
+}
+function proximamenteSection(items) {
+  if (!items?.length) return '';
+  return `<section class="section" style="padding-top:0"><div class="section-inner">
+    <div class="section-header">
+      <div><div class="section-label section-label-proximamente">próximas aperturas</div><h2 class="section-title">Próximamente</h2></div>
     </div>
     <div class="cards-grid animate-in">${items.map(c => careerCard(c)).join('')}</div>
   </div></section>`;
@@ -321,7 +446,7 @@ function nuevasSection(nuevas) {
   if (!nuevas?.length) return '';
   return `<section class="section" style="padding-top:0"><div class="section-inner">
     <div class="section-header">
-      <div><div class="section-label">Incorporadas recientemente</div><h2 class="section-title">¡Nuevas propuestas!</h2></div>
+      <div><div class="section-label">Incorporadas recientemente</div><h2 class="section-title">Nuevas propuestas</h2></div>
     </div>
     <div class="cards-grid animate-in">${nuevas.map(c => careerCard(c)).join('')}</div>
   </div></section>`;
@@ -359,9 +484,10 @@ function careerCard(c) {
   };
   const tipoLabel = c.esCurso ? 'Curso' : (c.tipo || 'Carrera');
   const tipoClass = tipoLabel.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const proximamenteBadge = c.proximamente ? '<span class="badge badge-proximamente">Próximamente</span>' : '';
   const nuevaBadge = c.nueva ? `<span class="badge badge-nueva">Nuevo</span>` : '';
   const _activo = evalState(c._activo !== undefined ? c._activo : c.activo, true);
-  const finalizadaBadge = !_activo ? `<span class="badge badge-finalizada">${c.esCurso ? 'Finalizado' : 'Finalizada'}</span>` : '';
+  const finalizadaBadge = (!_activo && !c.proximamente) ? `<span class="badge badge-finalizada">${c.esCurso ? 'Finalizado' : 'Finalizada'}</span>` : '';
   // Handle both old boolean and new object format
   const _inscAbierta = c.inscripcionAbierta
     ? (typeof c.inscripcionAbierta==='object'
@@ -369,6 +495,7 @@ function careerCard(c) {
         : c.inscripcionAbierta)
     : false;
   const inscBadge = _inscAbierta ? '<span class="badge badge-inscripcion">Inscripción abierta</span>' : '';
+  const descSnippet = String(c.descripcion || '').trim();
   return `
   <div class="career-card card-animate" data-id="${c.id}">
     <div class="card-top">
@@ -378,12 +505,12 @@ function careerCard(c) {
           ${c.subtipo ? `<span class="badge badge-tipo posgrado">${c.subtipo}</span>` : ''}
           <span class="badge badge-modalidad">${c.modalidad}</span>
         </div>
-        ${(finalizadaBadge || nuevaBadge || inscBadge) ? `<div class="card-badges-state">${finalizadaBadge}${nuevaBadge}${inscBadge}</div>` : ''}
+        ${(proximamenteBadge || finalizadaBadge || nuevaBadge || inscBadge) ? `<div class="card-badges-state">${proximamenteBadge}${finalizadaBadge}${nuevaBadge}${inscBadge}</div>` : ''}
       </div>
     </div>
     <h3 class="card-title">${c.nombre}</h3>
     ${c.tags?.length ? `<div class="card-tags" style="display:flex;flex-wrap:nowrap;gap:5px;margin-bottom:8px;overflow:hidden">${c.tags.slice(0,3).map(t=>`<span style="font-size:.68rem;padding:2px 9px;background:rgba(0,163,224,.07);border:1px solid rgba(0,163,224,.15);border-radius:100px;color:var(--unam-cyan);white-space:nowrap;flex-shrink:0">${t}</span>`).join('')}${c.tags.length>3?`<span style="font-size:.68rem;color:var(--text-muted);flex-shrink:0">+${c.tags.length-3}</span>`:''}</div>` : ''}
-    <p class="card-desc">${c.descripcion}</p>
+    <div class="card-desc rich-content card-desc-rich">${descSnippet}</div>
     <div class="card-meta">
       ${c.duracion ? `<div class="card-meta-item">${c.duracion}</div>` : ''}
       <div class="card-meta-item">${(c.unidadesAcademicas||[c.unidadAcademica]).filter(Boolean).join(', ')}</div>
@@ -391,7 +518,9 @@ function careerCard(c) {
     </div>
     <div class="card-footer">
       <span class="card-disciplina">${c.disciplina||''}</span>
-      <button class="btn-primary" onclick="openDetail(${c.id})">Ver más</button>
+      <div class="card-footer-actions">
+        <button type="button" class="btn-primary" onclick="openDetail(${c.id})">Ver más</button>
+      </div>
     </div>
   </div>`;
 }
@@ -416,8 +545,8 @@ async function renderSearch(app) {
   app.innerHTML = `
   <div class="search-page">
     <div class="search-page-header">
-      <h1 class="search-page-title">Propuestas Formativas</h1>
-      <p class="search-page-sub">Explorá toda la oferta de Educación a Distancia: carreras, posgrados y cursos. Filtrá por tipo, disciplina, modalidad, unidad académica y más..</p>
+      <h1 class="search-page-title">Oferta Académica</h1>
+      <p class="search-page-sub">Explorá toda la oferta académica de la <strong>Universidad Nacional de Misiones</strong> en Educación a Distancia: carreras, posgrados y cursos. Filtrá por tipo, disciplina, modalidad, unidad académica y más..</p>
       <div class="search-bar-full">
         <div class="search-box" id="main-search-box">
           <span class="search-icon">🔍</span>
@@ -457,6 +586,7 @@ async function renderSearch(app) {
           <div class="results-sort">
             <label>Ordenar:</label>
             <select class="select-styled" id="sort-select">
+              <option value="reciente">Recientes</option>
               <option value="nombre">Nombre A–Z</option>
               <option value="tipo">Tipo</option>
             </select>
@@ -699,7 +829,7 @@ window.filterByTipo = filterByTipo;
 function setupCardClicks() {
   document.querySelectorAll('.career-card').forEach(card => {
     card.addEventListener('click', e => {
-      if (e.target.classList.contains('btn-primary')) return;
+      if (e.target.closest('button, a, input, label, select, textarea')) return;
       const id = parseInt(card.dataset.id);
       if (id) openDetail(id);
     });
@@ -746,6 +876,7 @@ function renderDetail(c, app) {
   }
   const _activo      = evalState(c._activo !== undefined ? c._activo : c.activo);
   const _inscAbierta = evalState(c._inscripcionAbierta !== undefined ? c._inscripcionAbierta : c.inscripcionAbierta);
+  const isProximamente = c.proximamente === true;
   const EAD_UNIT = 'Educación a Distancia';
   const unidadesRaw = [...new Set((c.unidadesAcademicas || [c.unidadAcademica]).filter(Boolean))];
   const unidadesOrdered = (unidadesRaw.includes(EAD_UNIT) && unidadesRaw.length > 1)
@@ -757,7 +888,9 @@ function renderDetail(c, app) {
 
   // ── Badge markup ──────────────────────────────────────
   const finalizadaBanner = !_activo
-    ? '<div style="display:inline-flex;align-items:center;gap:8px;padding:7px 14px;background:rgba(220,38,38,.09);border:1px solid rgba(220,38,38,.28);border-radius:100px;margin-bottom:14px;font-size:.83rem;font-weight:700;color:#b42318">' + (c.esCurso ? 'Finalizado' : 'Finalizada') + '</div>'
+    ? (isProximamente
+      ? '<div class="detail-status-proximamente">Próximamente</div>'
+      : '<div style="display:inline-flex;align-items:center;gap:8px;padding:7px 14px;background:rgba(220,38,38,.09);border:1px solid rgba(220,38,38,.28);border-radius:100px;margin-bottom:14px;font-size:.83rem;font-weight:700;color:#b42318">' + (c.esCurso ? 'Finalizado' : 'Finalizada') + '</div>')
     : '';
   const inscBadge = _inscAbierta ? '<span class="badge badge-inscripcion">Inscripción abierta</span>' : '';
   const nuevaBadge = c.nueva ? '<span class="badge badge-nueva">Nuevo</span>' : '';
@@ -773,9 +906,10 @@ function renderDetail(c, app) {
         let row = '<div style="display:flex;align-items:flex-start;gap:16px;padding:16px 20px;background:#fff;border:1px solid var(--border-card);border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.04)">';
         row += '<div style="width:40px;height:40px;background:rgba(125,78,36,.08);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.2rem">📋</div>';
         row += '<div style="flex:1">';
-        row += '<div style="font-weight:700;font-size:.92rem;margin-bottom:3px">' + d.tipo + (d.organismo ? ' — ' + d.organismo : '') + '</div>';
-        if (d.numero || d.anio) row += '<div style="font-size:.85rem;color:var(--text-muted);margin-bottom:6px">N° ' + [d.numero, d.anio].filter(Boolean).join(' / ') + '</div>';
-        if (d.pdf) row += '<a href="' + d.pdf + '" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:.83rem;color:var(--unam-cyan);font-weight:600;text-decoration:none">Ver documento PDF →</a>';
+        const docUrl = safePublicUrl(d.pdf, { allowRelative: true });
+        row += '<div style="font-weight:700;font-size:.92rem;margin-bottom:3px">' + escapeHtml(d.tipo) + (d.organismo ? ' — ' + escapeHtml(d.organismo) : '') + '</div>';
+        if (d.numero || d.anio) row += '<div style="font-size:.85rem;color:var(--text-muted);margin-bottom:6px">N° ' + escapeHtml([d.numero, d.anio].filter(Boolean).join(' / ')) + '</div>';
+        if (docUrl) row += '<a href="' + escapeAttr(docUrl) + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;font-size:.83rem;color:var(--unam-cyan);font-weight:600;text-decoration:none">Ver documento..</a>';
         row += '</div></div>';
         return row;
       }).join('') +
@@ -785,12 +919,17 @@ function renderDetail(c, app) {
   // ── TAB 1: Descripción ────────────────────────────────
   let tab1 = '';
   tab1 += '<div class="detail-section" style="border:none;padding:0 0 24px">';
-  tab1 += '<div style="font-size:1.02rem;color:var(--text-secondary);line-height:1.85">' + (c.descripcion || '') + '</div>';
+  tab1 += '<div class="rich-content" style="font-size:1.02rem;color:var(--text-secondary);line-height:1.85;text-align:justify">' + (c.descripcion || '') + '</div>';
+  if (isProximamente) {
+    tab1 += `<div class="detail-interest-cta-wrap">
+      <button type="button" class="btn-interest-cta" onclick="openInterestedModal(${c.id})">Quiero recibir información</button>
+    </div>`;
+  }
   tab1 += '</div>';
   // Unidad académica
   if (showUnidadAcademica) {
     tab1 += '<div class="detail-section"><div class="detail-section-title">Unidad académica</div>';
-    tab1 += '<p style="color:var(--text-secondary);font-size:.95rem">' + unidadesStr + '</p></div>';
+    tab1 += '<p style="color:var(--text-secondary);font-size:.95rem">' + escapeHtml(unidadesStr) + '</p></div>';
   }
   // Disertantes
   if (c.disertantes?.length) {
@@ -808,61 +947,58 @@ function renderDetail(c, app) {
   // Contacto
   if (c.contacto || c.telefonoContacto) {
     tab1 += '<div class="detail-section"><div class="detail-section-title">Contacto</div>';
-    if (c.contacto) tab1 += '<p style="font-size:.93rem;margin-bottom:4px"><a href="mailto:' + c.contacto + '" style="color:var(--unam-cyan);font-weight:600">' + c.contacto + '</a></p>';
-    if (c.telefonoContacto) tab1 += '<p style="font-size:.9rem;color:var(--text-secondary)">' + c.telefonoContacto + '</p>';
+    const contactMail = safePublicUrl(`mailto:${c.contacto}`, { allowMailto: true });
+    if (c.contacto && contactMail) tab1 += '<p style="font-size:.93rem;margin-bottom:4px"><a href="' + escapeAttr(contactMail) + '" style="color:var(--unam-cyan);font-weight:600">' + escapeHtml(c.contacto) + '</a></p>';
+    if (c.telefonoContacto) tab1 += '<p style="font-size:.9rem;color:var(--text-secondary)">' + escapeHtml(c.telefonoContacto) + '</p>';
     tab1 += '</div>';
   }
   // Tags
   if (c.tags?.length) {
     tab1 += '<div class="detail-section"><div class="detail-section-title">Palabras clave</div>';
-    tab1 += '<div class="tags-list">' + c.tags.map(t => '<span class="tag">' + t + '</span>').join('') + '</div></div>';
+    tab1 += '<div class="tags-list">' + c.tags.map(t => '<span class="tag">' + escapeHtml(t) + '</span>').join('') + '</div></div>';
   }
 
   // ── TAB 2: Requisitos ─────────────────────────────────
   let tab2 = '';
-  if (!_activo) {
-    tab2 += '<div class="detail-section"><p style="font-size:.95rem;color:var(--text-muted)">Esta propuesta ya no está activa. Los requisitos de admisión no están disponibles.</p></div>';
-  } else if (c.requisitosTexto || c.requisitos?.length) {
+  if (c.requisitosTexto || c.requisitos?.length) {
     tab2 += '<div class="detail-section">';
     if (c.requisitosTexto) {
-      tab2 += '<div style="font-size:.95rem;color:var(--text-secondary);line-height:1.75">' + c.requisitosTexto + '</div>';
+      tab2 += '<div class="rich-content" style="font-size:.95rem;color:var(--text-secondary);line-height:1.75;text-align:justify">' + c.requisitosTexto + '</div>';
     } else {
       tab2 += '<div class="req-list">' + (c.requisitos||[]).map(r => '<div class="req-item"><span class="req-dot"></span><span>' + r + '</span></div>').join('') + '</div>';
     }
     tab2 += '</div>';
-  } else {
-    tab2 += '<div class="detail-section"><p style="font-size:.95rem;color:var(--text-muted)">No se cargaron requisitos de admisión para esta propuesta.</p></div>';
   }
-  if (c.documentos?.length) {
-    tab2 += '<div class="detail-section"><div class="detail-section-title">Documentación</div>';
-    tab2 += docsSectionHtml;
-    tab2 += '</div>';
+
+  // ── TAB 2.5: Alcances del título ───────────────────────
+  let tabAlcances = '';
+  const alcancesHtml = c.alcancesTitulo || c.alcancesDelTitulo || c.alcances || '';
+  const hasAlcances = String(alcancesHtml).trim();
+  if (!c.esCurso && hasAlcances) {
+    tabAlcances += '<div class="detail-section">';
+    tabAlcances += '<div class="rich-content" style="font-size:.97rem;color:var(--text-secondary);line-height:1.8;text-align:justify">' + alcancesHtml + '</div>';
+    tabAlcances += '</div>';
   }
   // ── TAB 3: Plan / Programa ────────────────────────────
   let tab3 = '';
   if (c.esCurso) {
     if (c.programa) {
-      tab3 += '<div class="detail-section"><div style="font-size:.97rem;color:var(--text-secondary);line-height:1.8">' + c.programa + '</div></div>';
-    } else {
-      tab3 += '<div class="detail-section"><p style="color:var(--text-muted);font-size:.95rem">No se cargó programa para este curso.</p></div>';
-    }
-    if (c.formularioInscripcion && _inscAbierta) {
-      tab3 += '<div style="margin-top:16px"><a href="' + c.formularioInscripcion + '" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:11px 22px;background:var(--unam-cyan);color:#fff;border-radius:8px;font-weight:600;font-size:.95rem;text-decoration:none">Formulario de inscripción</a></div>';
+      tab3 += '<div class="detail-section"><div class="rich-content" style="font-size:.97rem;color:var(--text-secondary);line-height:1.8;text-align:justify">' + c.programa + '</div></div>';
     }
   } else {
     // Carreras: plan de estudios con visor PDF
     if (c.planEstudiosPDF) {
       const pdfId = 'pdf-viewer-' + c.id;
-      const safePdfUrl = String(c.planEstudiosPDF || '').replace(/"/g, '&quot;');
+      const safePdfUrl = safePublicUrl(c.planEstudiosPDF, { allowRelative: true });
+      if (safePdfUrl) {
       tab3 += '<div style="width:100%;border:0.5px solid var(--border);border-radius:8px;margin-bottom:16px">';
       tab3 += '<div style="padding:8px 14px;background:var(--bg-surface);border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between">';
       tab3 += '<span style="font-size:.82rem;color:var(--text-muted);font-weight:600">Plan de estudios</span>';
       tab3 += '<div style="display:flex;align-items:center;gap:8px">';
-      tab3 += '<a href="' + c.planEstudiosPDF + '" target="_blank" rel="noopener noreferrer" style="font-size:.78rem;padding:3px 10px;background:rgba(0,163,224,.08);border:1px solid rgba(0,163,224,.2);border-radius:5px;color:var(--unam-cyan);cursor:pointer;text-decoration:none">Abrir PDF</a>';
-      tab3 += '<button onclick="togglePdfFull(\'' + pdfId + '\')" style="font-size:.78rem;padding:3px 10px;background:rgba(0,163,224,.08);border:1px solid rgba(0,163,224,.2);border-radius:5px;color:var(--unam-cyan);cursor:pointer" id="' + pdfId + '-btn">⛶ Expandir</button>';
+      tab3 += '<a href="' + escapeAttr(safePdfUrl) + '" target="_blank" rel="noopener noreferrer" style="font-size:.78rem;padding:3px 10px;background:rgba(0,163,224,.08);border:1px solid rgba(0,163,224,.2);border-radius:5px;color:var(--unam-cyan);cursor:pointer;text-decoration:none">Abrir</a>';
       tab3 += '</div>';
       tab3 += '</div>';
-      tab3 += '<div id="' + pdfId + '" data-pdf-viewer="1" data-pdf-url="' + safePdfUrl + '" style="width:100%;height:520px;display:flex;flex-direction:column;transition:height .3s ease">';
+      tab3 += '<div id="' + pdfId + '" data-pdf-viewer="1" data-pdf-url="' + escapeAttr(safePdfUrl) + '" style="width:100%;height:520px;display:flex;flex-direction:column;transition:height .3s ease">';
       tab3 += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--bg-elevated)">';
       tab3 += '<div style="display:flex;align-items:center;gap:8px">';
       tab3 += '<button onclick="pdfPrev(\'' + pdfId + '\')" id="' + pdfId + '-prev" style="font-size:.78rem;padding:4px 10px;border:1px solid var(--border);border-radius:5px;background:#fff;cursor:pointer" disabled>←</button>';
@@ -877,52 +1013,119 @@ function renderDetail(c, app) {
       tab3 += '<div style="flex:1;overflow:auto;background:#f3f6f8;display:flex;justify-content:center;align-items:flex-start;padding:12px">';
       tab3 += '<canvas id="' + pdfId + '-canvas" style="max-width:100%;height:auto;background:#fff;border:1px solid var(--border);box-shadow:0 2px 12px rgba(0,0,0,.08)"></canvas>';
       tab3 += '</div>';
-      tab3 += '<div id="' + pdfId + '-err" style="display:none;padding:12px 16px;text-align:center;color:var(--text-muted);font-size:.9rem;border-top:1px solid var(--border)">No se pudo cargar el PDF. <a href="' + c.planEstudiosPDF + '" target="_blank" style="color:var(--unam-cyan)">Abrir archivo</a></div>';
+      tab3 += '<div id="' + pdfId + '-err" style="display:none;padding:12px 16px;text-align:center;color:var(--text-muted);font-size:.9rem;border-top:1px solid var(--border)">No se pudo cargar el PDF. <a href="' + escapeAttr(safePdfUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--unam-cyan)">Abrir archivo</a></div>';
       tab3 += '</div>';
       tab3 += '</div>';
+      }
     }
     if (c.planEstudios?.length) {
       tab3 += '<div class="plan-list">' + c.planEstudios.map((item, i) =>
         '<div class="plan-item"><span class="plan-num">' + String(i+1).padStart(2,'0') + '</span><span>' + item + '</span></div>'
       ).join('') + '</div>';
     }
-    if (!c.planEstudiosPDF && !c.planEstudios?.length) {
-      tab3 += '<div class="detail-section"><p style="color:var(--text-muted);font-size:.95rem">No se cargó plan de estudios para esta carrera.</p></div>';
-    }
   }
 
-  // ── TAB 4: Resoluciones ───────────────────────────────
-  let tab4 = '';
-  tab4 += docsSectionHtml;
-
   // ── Tab dots (show only if content) ──────────────────
-  const hasRequisitos = !!(c.requisitosTexto || c.requisitos?.length);
-  const hasPlan = !!(c.esCurso ? c.programa : (c.planEstudios?.length || c.planEstudiosPDF));
+  const hasRequisitos = !!tab2;
+  const hasPlan = !!tab3;
   const hasDocs = !!(c.documentos?.length);
   const tab3Label = c.esCurso ? 'Programa' : 'Plan de estudios';
+  const inscStateRaw = c.inscripcionAbierta;
+  const inscStateValue = typeof inscStateRaw === 'object'
+    ? !!(inscStateRaw.valor !== undefined ? inscStateRaw.valor : inscStateRaw.activo)
+    : !!inscStateRaw;
   const hasInscForm = !!(c.formularioInscripcion);
+  const shouldShowInscTab = !isProximamente && (c.esCurso || hasInscForm || _inscAbierta);
   const inscFecha = c.inscripcionAbierta?.fechaHasta || null;
-  const inactiveNote = !_activo ? '<div style="margin-top:28px;padding:18px 22px;background:rgba(143,163,177,.07);border:1px solid rgba(143,163,177,.2);border-radius:12px"><p style="font-size:.9rem;color:var(--text-muted);margin-bottom:10px">Esta propuesta ya no está activa. Para consultas podés contactarnos:</p><a href="mailto:ead@unam.edu.ar" style="color:var(--unam-cyan);font-weight:600;font-size:.93rem">ead@unam.edu.ar</a></div>' : '';
+  const inscExpiredByDate = !!(inscStateValue && inscFecha && !_inscAbierta);
+  const inactiveNote = (!_activo && !isProximamente) ? '<div style="margin-top:28px;padding:18px 22px;background:rgba(143,163,177,.07);border:1px solid rgba(143,163,177,.2);border-radius:12px"><p style="font-size:.9rem;color:var(--text-muted);margin-bottom:10px">Esta propuesta ya no está activa. Para consultas podés contactarnos:</p><a href="mailto:ead@unam.edu.ar" style="color:var(--unam-cyan);font-weight:600;font-size:.93rem">ead@unam.edu.ar</a></div>' : '';
 
   // ── TAB Inscripción (solo si tiene formulario) ────────────
-  const tabInsc = hasInscForm ? (() => {
+  const tabInsc = shouldShowInscTab ? (() => {
     const fechaStr = inscFecha
       ? new Date(inscFecha).toLocaleDateString('es-AR', {day:'2-digit',month:'long',year:'numeric'})
       : null;
     let html = '<div class="detail-section" style="border:none;padding:0 0 24px">';
+    if (_inscAbierta && !hasInscForm) {
+      const safeMailTo = c.contacto ? safePublicUrl(`mailto:${c.contacto}`, { allowMailto: true }) : '';
+      const contactMail = safeMailTo
+        ? `<a href="${escapeAttr(safeMailTo)}" style="color:var(--unam-cyan);font-weight:700;text-decoration:none">${escapeHtml(c.contacto)}</a>`
+        : (c.contacto ? `<strong>${escapeHtml(c.contacto)}</strong>` : null);
+      const contactPhone = c.telefonoContacto ? `<strong>${escapeHtml(c.telefonoContacto)}</strong>` : null;
+      const contactParts = [contactMail, contactPhone].filter(Boolean);
+      const contactLine = contactParts.length
+        ? contactParts.join(' o ')
+        : '<strong>los canales de contacto de la propuesta</strong>';
+      html += `<div style="margin-bottom:14px;padding:12px 14px;background:rgba(0,163,224,.06);border:1px solid rgba(0,163,224,.2);border-radius:10px">
+        <p style="margin:0;font-size:.92rem;line-height:1.65;color:var(--text-primary)">
+          Para inscribirte debés cumplir con los <strong>requisitos</strong> de inscripción y comunicarte con ${contactLine}.
+        </p>
+      </div>`;
+    }
+    if (c.esCurso && _inscAbierta && hasInscForm) {
+      html += `<p style="font-size:.98rem;color:var(--text-secondary);line-height:1.8;margin-bottom:14px">
+        Para poder inscribirte al curso <strong>${escapeHtml(c.nombre)}</strong>, deberás completar el formulario de inscripción.
+      </p>`;
+      html += `<div style="margin-bottom:16px;padding:12px 14px;background:rgba(0,163,224,.06);border:1px solid rgba(0,163,224,.2);border-radius:10px">
+        <p style="margin:0;font-size:.9rem;line-height:1.6;color:var(--text-primary)">
+          Recordá revisar los <a href="#" onclick="openRequirementsTab(event)" style="color:var(--unam-cyan);text-decoration:underline"><strong>requisitos</strong></a> de inscripción antes de hacerlo.
+        </p>
+      </div>`;
+    }
     if (fechaStr) {
-      html += `<p style="font-size:1rem;color:var(--text-primary);margin-bottom:20px">
-        La inscripción al curso <strong>${c.nombre}</strong> estará disponible hasta el <strong style="color:var(--unam-green)">${fechaStr}</strong>.
+      html += `<p style="font-size:1rem;color:var(--text-primary);margin-bottom:14px">
+        La inscripción${c.esCurso ? ` al curso <strong>${escapeHtml(c.nombre)}</strong>` : ''} estará disponible hasta el <strong style="color:var(--unam-green)">${escapeHtml(fechaStr)}</strong>.
       </p>`;
     }
-    html += `<a href="${c.formularioInscripcion}" target="_blank" style="display:inline-flex;align-items:center;gap:10px;padding:14px 24px;background:var(--unam-cyan);color:#fff;font-weight:700;font-size:.95rem;border-radius:10px;text-decoration:none">
-      Acceder al formulario →
-    </a>`;
+    const enrollmentUrl = safePublicUrl(c.formularioInscripcion);
+    if (hasInscForm) {
+      if (!enrollmentUrl) return '<div class="detail-section"><p style="color:var(--text-muted);font-size:.95rem">El formulario de inscripción configurado no es válido.</p></div>';
+      if (_inscAbierta) {
+        html += `<p style="font-size:.98rem;color:var(--text-secondary);line-height:1.7;margin:0 0 12px">
+          Para inscribirte deberás completar el formulario de inscripción.
+        </p>`;
+        html += `<a href="${escapeAttr(enrollmentUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:var(--unam-cyan);color:#fff;font-weight:700;font-size:.88rem;border-radius:9px;text-decoration:none">
+          Acceder al Formulario
+        </a>`;
+        if (c.esCurso) {
+          html += `<p style="font-size:.9rem;color:var(--text-muted);line-height:1.65;margin:28px 0 0">
+            Si necesitás ayuda, podés comunicarte a <a href="mailto:ead@unam.edu.ar" style="color:var(--unam-cyan);font-weight:700;text-decoration:none">ead@unam.edu.ar</a> o +54 376 44-80200 / Int. 195.
+          </p>`;
+        }
+      } else {
+        html += `<div style="margin:0 0 12px;padding:12px 14px;background:rgba(220,38,38,.06);border:1px solid rgba(220,38,38,.2);border-radius:10px">
+          <p style="margin:0;font-size:.92rem;line-height:1.65;color:#9f1239">
+            La inscripción está cerrada${inscExpiredByDate && fechaStr ? ` desde el <strong>${escapeHtml(fechaStr)}</strong>` : ''}.
+          </p>
+        </div>`;
+      }
+    } else if (c.esCurso) {
+      html += `<div style="margin:0 0 12px;padding:12px 14px;background:rgba(143,163,177,.1);border:1px solid rgba(143,163,177,.24);border-radius:10px">
+        <p style="margin:0;font-size:.92rem;line-height:1.65;color:var(--text-secondary)">
+          La inscripción no está habilitada para este curso en este momento.
+        </p>
+      </div>`;
+    }
     html += '</div>';
     return html;
   })() : '';
 
-  const inscTabIdx = 4;
+  const tabs = [
+    { label: 'Descripción', content: tab1 + inactiveNote, always: true },
+    { label: 'Requisitos', content: tab2 },
+    { label: 'Alcances del título', content: tabAlcances },
+    { label: tab3Label, content: tab3 },
+    { label: `Documentación${hasDocs ? ` <span class='detail-tab-dot'>${c.documentos.length}</span>` : ''}`, content: hasDocs ? docsSectionHtml : '' },
+    { label: 'Inscripción', content: shouldShowInscTab ? tabInsc : '' },
+  ].filter((t) => t.always || String(t.content || '').trim());
+
+  const tabsBar = tabs.map((tab, idx) =>
+    `<button class="detail-tab ${idx === 0 ? 'active' : ''}" onclick="switchTab(${idx}, this)">${tab.label}</button>`
+  ).join('');
+  const tabsPanels = tabs.map((tab, idx) =>
+    `<div id="detail-tab-${idx}" class="detail-tab-panel ${idx === 0 ? 'active' : ''}">${tab.content}</div>`
+  ).join('');
+
   app.innerHTML = `
   <div class="detail-page">
     <div class="detail-hero">
@@ -948,18 +1151,9 @@ function renderDetail(c, app) {
     </div>
 
     <div class="detail-tabs-bar">
-      <button class="detail-tab active" onclick="switchTab(0, this)">Descripción</button>
-      <button class="detail-tab" onclick="switchTab(1, this)">Requisitos</button>
-      <button class="detail-tab" onclick="switchTab(2, this)">${tab3Label}</button>
-      <button class="detail-tab" onclick="switchTab(3, this)">Documentación${hasDocs ? ' <span class=\'detail-tab-dot\'>' + c.documentos.length + '</span>' : ''}</button>
-      ${hasInscForm ? `<button class="detail-tab" onclick="switchTab(${inscTabIdx}, this)">Inscripción</button>` : ''}
+      ${tabsBar}
     </div>
-
-    <div id="detail-tab-0" class="detail-tab-panel active">${tab1}${inactiveNote}</div>
-    <div id="detail-tab-1" class="detail-tab-panel">${tab2}</div>
-    <div id="detail-tab-2" class="detail-tab-panel">${tab3}</div>
-    <div id="detail-tab-3" class="detail-tab-panel">${tab4}</div>
-    ${hasInscForm ? `<div id="detail-tab-${inscTabIdx}" class="detail-tab-panel">${tabInsc}</div>` : ''}
+    ${tabsPanels}
 
   </div>
   ${footerHTML()}`;
@@ -974,6 +1168,73 @@ function switchTab(idx, btn) {
   const panel = document.getElementById('detail-tab-' + idx);
   if (panel) panel.classList.add('active');
 }
+
+function openRequirementsTab(event) {
+  event?.preventDefault?.();
+  const tabs = [...document.querySelectorAll('.detail-tab')];
+  const reqIdx = tabs.findIndex((tab) => String(tab.textContent || '').trim().toLowerCase().startsWith('requisitos'));
+  if (reqIdx >= 0) switchTab(reqIdx, tabs[reqIdx]);
+}
+window.openRequirementsTab = openRequirementsTab;
+
+function closeInterestedModal() {
+  const modal = document.getElementById('modal-container');
+  if (modal) modal.innerHTML = '';
+}
+
+function openInterestedModal(careerId) {
+  const modal = document.getElementById('modal-container');
+  if (!modal) return;
+  modal.innerHTML = `
+    <div class="modal-backdrop interested-modal-backdrop" onclick="closeInterestedModal()">
+      <div class="modal-content interested-modal-content" onclick="event.stopPropagation()">
+        <h3 class="interested-modal-title">Recibir información</h3>
+        <p class="interested-modal-sub">Dejá tu correo y te avisaremos cuando se habilite la propuesta.</p>
+        <input id="interesado-email" type="email" class="form-input" placeholder="informes@unam.edu.ar" autocomplete="email" />
+        <div id="interesado-error" class="interested-modal-error"></div>
+        <div class="interested-modal-actions">
+          <button type="button" class="interested-btn-secondary" onclick="closeInterestedModal()">Cancelar</button>
+          <button type="button" class="interested-btn-primary" onclick="submitInterested(${Number(careerId)})">Enviar</button>
+        </div>
+      </div>
+    </div>`;
+  const input = document.getElementById('interesado-email');
+  input?.focus();
+  input?.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') submitInterested(careerId);
+  });
+}
+
+async function submitInterested(careerId) {
+  const input = document.getElementById('interesado-email');
+  const err = document.getElementById('interesado-error');
+  const email = String(input?.value || '').trim().toLowerCase();
+  if (!email) {
+    if (err) err.textContent = 'Ingresá un correo.';
+    return;
+  }
+  const okEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!okEmail) {
+    if (err) err.textContent = 'Ingresá un correo válido.';
+    return;
+  }
+  try {
+    await registerCareerInterest(careerId, email);
+    closeInterestedModal();
+    showToast('Registro guardado. Te contactaremos con novedades.', 'success');
+  } catch (e) {
+    if (err) {
+      if (e?.errorCode === 'ALREADY_INFORMED') {
+        err.innerHTML = 'Ya te enviamos la información a ese correo. Si no lo encontrás, revisá la carpeta de spam o escribinos a <a href="mailto:ead@unam.edu.ar" style="color:inherit;text-decoration:none">ead@unam.edu.ar</a>.';
+      } else {
+        err.textContent = e?.message || 'No se pudo registrar tu correo.';
+      }
+    }
+  }
+}
+window.openInterestedModal = openInterestedModal;
+window.closeInterestedModal = closeInterestedModal;
+window.submitInterested = submitInterested;
 
 
 // ── ADMIN ABM ─────────────────────────────────────────────
@@ -1293,6 +1554,30 @@ function closeModalDirect() { document.getElementById('modal-container').innerHT
 window.closeModal = closeModal;
 window.closeModalDirect = closeModalDirect;
 
+// ── NOVEDADES ─────────────────────────────────────────────
+function renderNovedades(app) {
+  app.innerHTML = `
+    <div class="detail-page" style="padding-top:calc(var(--nav-height) + 40px)">
+      <div class="novedades-page">
+        <h1 class="novedades-title">Novedades</h1>
+        <p class="novedades-sub">
+          Queremos mantenerte al día con las novedades de <strong>Educación a Distancia</strong> de la Universidad Nacional de Misiones.
+          Cada semana te informaremos por correo sobre actualizaciones de la oferta académica, nuevas propuestas,
+          aperturas de inscripción y cambios relevantes publicados en el sitio.
+        </p>
+        <section class="newsletter-inline" aria-label="Newsletter de novedades">
+          <div class="newsletter-inline-title">Sumate al Newsletter semanal</div>
+          <p class="newsletter-inline-sub">Dejá tu correo electrónico y recibí las novedades en un solo resumen.</p>
+          <form class="newsletter-form" onsubmit="return submitNewsletterFrom('newsletter-novedades-email','novedades')">
+            <input id="newsletter-novedades-email" type="email" class="newsletter-input" placeholder="tu-correo@ejemplo.com" autocomplete="email" />
+            <button type="submit" class="newsletter-btn">Recibí novedades</button>
+          </form>
+        </section>
+      </div>
+    </div>
+    ${footerHTML()}`;
+}
+
 // ── PLACEHOLDER PAGES ─────────────────────────────────────
 const PLACEHOLDER_DATA = {
   quienes:  { icon: '', title: 'Quiénes somos', isContent: true },
@@ -1301,7 +1586,7 @@ const PLACEHOLDER_DATA = {
 
 function docInst(titulo, subtitulo, fecha, desc, pdfUrl) {
   const pdfBtn = pdfUrl
-    ? `<a href="${pdfUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:.83rem;color:var(--unam-cyan);font-weight:600;text-decoration:none">Ver documento PDF →</a>`
+    ? `<a href="${pdfUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:.83rem;color:var(--unam-cyan);font-weight:600;text-decoration:none">Ver documento..</a>`
     : `<span style="font-size:.78rem;color:var(--text-muted)">PDF próximamente disponible</span>`;
   return `<div style="padding:20px 24px;background:var(--bg-card);border:1px solid var(--border-card);border-radius:12px;display:flex;align-items:flex-start;gap:16px">
     <div style="width:42px;height:42px;background:rgba(0,163,224,.08);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.3rem">📋</div>
@@ -1459,6 +1744,7 @@ function footerHTML() {
         <div class="footer-col"><h4>Institucional</h4><ul>
           <li><a href="https://unam.edu.ar" target="_blank">Sitio Oficial</a></li>
           <li><a onclick="navigate('unidades')" style="cursor:pointer">Unidades Académicas</a></li>
+          <li><a onclick="navigate('novedades')" style="cursor:pointer">Novedades</a></li>
           <li><a onclick="navigate('quienes');setTimeout(()=>window.qsTab&&window.qsTab(1),80)" style="cursor:pointer">Documentación</a></li>
         </ul></div>
         <div class="footer-col"><h4>Accesos</h4><ul>
@@ -1507,29 +1793,44 @@ function togglePdfFull(id) {
     viewer.style.position = '';
     viewer.style.top = '';
     viewer.style.left = '';
+    viewer.style.right = '';
+    viewer.style.bottom = '';
     viewer.style.width = '';
     viewer.style.zIndex = '';
     viewer.style.background = '';
     viewer.removeAttribute('data-expanded');
-    if (btn) btn.textContent = '⛶ Expandir';
-  document.body.style.overflow = '';
+    if (btn) {
+      btn.textContent = '⛶ Expandir';
+      btn.style.position = '';
+      btn.style.top = '';
+      btn.style.right = '';
+      btn.style.zIndex = '';
+    }
+    document.body.style.overflow = '';
+    queuePdfRender(id, PDF_VIEWERS.get(id)?.pageNum || 1);
   } else {
-    viewer.style.height = 'calc(100vh - 80px)';
+    document.querySelectorAll('[data-pdf-viewer="1"][data-expanded="1"]').forEach((el) => {
+      if (el.id !== id) togglePdfFull(el.id);
+    });
+    viewer.style.height = '100vh';
     viewer.style.position = 'fixed';
-    viewer.style.top = '80px';
+    viewer.style.top = '0';
     viewer.style.left = '0';
-    viewer.style.width = '100%';
-    viewer.style.zIndex = '8000';
+    viewer.style.right = '0';
+    viewer.style.bottom = '0';
+    viewer.style.width = '100vw';
+    viewer.style.zIndex = '9000';
     viewer.style.background = '#fff';
     viewer.setAttribute('data-expanded','1');
     if (btn) {
       btn.textContent = '✕ Cerrar';
       btn.style.position = 'fixed';
-      btn.style.top = '88px';
+      btn.style.top = '18px';
       btn.style.right = '20px';
-      btn.style.zIndex = '8001';
+      btn.style.zIndex = '9001';
     }
     document.body.style.overflow = 'hidden';
+    queuePdfRender(id, PDF_VIEWERS.get(id)?.pageNum || 1);
   }
 }
 window.togglePdfFull = togglePdfFull;

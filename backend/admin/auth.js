@@ -4,8 +4,11 @@
  * Labels UI: root / Administrador Institucional / Administrador de Unidades
  */
 const crypto = require('crypto');
+const { EAD_UNIT } = require('../domain/constants');
+const { createPasswordHash, verifyPasswordHash, legacyPasswordHash, isLegacyPasswordHash } = require('../domain/security');
 
-const ROOT_EMAIL = 'joel_barrera@outlook.com';
+const ROOT_EMAIL = String(process.env.ROOT_EMAIL || 'joel_barrera@outlook.com').trim().toLowerCase();
+const ROOT_LOGIN = String(process.env.ROOT_LOGIN || 'root-unam').trim().toLowerCase();
 let JWT_SECRET = process.env.ADMIN_JWT_SECRET;
 if (!JWT_SECRET) {
   if (process.env.NODE_ENV === 'production') {
@@ -13,6 +16,9 @@ if (!JWT_SECRET) {
   }
   JWT_SECRET = crypto.randomBytes(48).toString('hex');
   console.warn('[security] ADMIN_JWT_SECRET no definido. Se usa clave efímera solo para desarrollo local.');
+}
+if (process.env.NODE_ENV === 'production' && String(JWT_SECRET).length < 32) {
+  throw new Error('ADMIN_JWT_SECRET es demasiado corto para producción. Usá al menos 32 caracteres aleatorios.');
 }
 const TOKEN_TTL  = 8 * 60 * 60 * 1000; // 8h
 
@@ -31,9 +37,6 @@ const CAN_CREATE = {
   institucional: ['unidades'],
   unidades:      [],
 };
-
-// Unidad que solo permite cursos
-const EAD_UNIT = 'Educación a Distancia';
 
 // ── JWT ──────────────────────────────────────────────────
 function b64url(s) {
@@ -121,12 +124,34 @@ function generatePassword() {
 function usernameFromEmail(email) {
   return (email||'').split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g,'');
 }
+function normalizeLogin(login) {
+  return String(login || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+}
+function resolveLogin(login, email) {
+  return normalizeLogin(login || usernameFromEmail(email));
+}
+function isRootIdentity(user) {
+  if (!user || typeof user !== 'object') return false;
+  return (user.rol === ROLES.ROOT)
+    || (normalizeLogin(user.login) === normalizeLogin(ROOT_LOGIN))
+    || (String(user.email || '').trim().toLowerCase() === ROOT_EMAIL.toLowerCase());
+}
+function publicAdminIdentity(user) {
+  if (!user) return '?';
+  if (isRootIdentity(user)) return ROOT_LOGIN;
+  return String(user.email || resolveLogin(user.login, user.email) || '?').trim();
+}
+function maskRootEmailInText(value) {
+  const raw = String(value || '');
+  if (!raw) return raw;
+  return raw.split(ROOT_EMAIL).join(ROOT_LOGIN);
+}
 function toProperCase(str) {
   return (str||'').trim().toLowerCase().split(/\s+/)
     .map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
 }
 function hashPassword(plain) {
-  return crypto.createHash('sha256').update(plain+JWT_SECRET).digest('hex');
+  return createPasswordHash(plain, JWT_SECRET);
 }
 function formatDNI(raw) {
   const d = String(raw||'').replace(/\D/g,'');
@@ -154,13 +179,21 @@ function validatePassword(password) {
   if (!/[^A-Za-z0-9]/.test(password)) return 'Al menos un carácter especial';
   return null;
 }
+function validateLogin(login) {
+  const normalized = normalizeLogin(login);
+  if (!normalized) return 'Usuario de acceso obligatorio';
+  if (normalized.length < 4) return 'El usuario de acceso debe tener al menos 4 caracteres';
+  if (!/^[a-z0-9._-]+$/.test(normalized)) return 'El usuario de acceso solo admite letras minúsculas, números, punto, guion y guion bajo';
+  return null;
+}
 
 module.exports = {
-  ROOT_EMAIL, ROLES, ROLE_LEVEL, ROLE_LABELS, CAN_CREATE, EAD_UNIT,
+  ROOT_EMAIL, ROOT_LOGIN, ROLES, ROLE_LEVEL, ROLE_LABELS, CAN_CREATE, EAD_UNIT,
   signJWT, verifyJWT, extractToken,
   requireAuth, requireRole,
   isActiveState, normalizeState,
-  generatePassword, usernameFromEmail, toProperCase,
-  hashPassword, formatPhone, formatDNI,
-  validateEmail, validateDNI, validatePassword,
+  generatePassword, usernameFromEmail, normalizeLogin, resolveLogin, isRootIdentity, publicAdminIdentity, maskRootEmailInText, toProperCase,
+  hashPassword, verifyPasswordHash: (plain, stored) => verifyPasswordHash(plain, stored, JWT_SECRET), legacyPasswordHash: (plain) => legacyPasswordHash(plain, JWT_SECRET), isLegacyPasswordHash,
+  formatPhone, formatDNI,
+  validateEmail, validateDNI, validatePassword, validateLogin,
 };

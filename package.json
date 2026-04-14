@@ -7,13 +7,19 @@
     "start": "node backend/server-standalone.js",
     "start:legacy": "node backend/server.js",
     "dev": "node --watch backend/server-standalone.js",
-    "test": "node --test backend/admin/router.test.js backend/persistence/db-config.test.js",
+    "test": "node --test backend/admin/router.test.js backend/admin/backup-utils.test.js backend/persistence/db-config.test.js backend/persistence/index.test.js backend/integration-api.test.js frontend/js/cpanel-shared.test.js frontend/js/cpanel-modules.test.js frontend/js/cpanel-core.test.js frontend/js/cpanel-careers.test.js",
+    "test:e2e:cpanel": "node --test frontend/e2e/cpanel-admin.e2e.test.js",
     "db:migrate": "node backend/scripts/migrate.js",
     "db:import": "node backend/scripts/import-db-json.js",
     "db:seed": "node backend/scripts/import-db-json.js backend/data/db.json",
-    "backup:smoke": "node backend/scripts/backup-smoke.js"
+    "backup:smoke": "node backend/scripts/backup-smoke.js",
+    "backup:export": "node backend/scripts/export-backup.js",
+    "backup:restore": "node backend/scripts/restore-backup.js",
+    "security:review-content": "node backend/scripts/review-content-safety.js",
+    "smoke:public": "node backend/scripts/smoke-public.js"
   },
   "dependencies": {
+    "nodemailer": "^8.0.5",
     "pdfjs-dist": "^3.11.174",
     "pg": "^8.20.0"
   },

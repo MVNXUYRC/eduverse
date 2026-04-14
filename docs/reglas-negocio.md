@@ -27,7 +27,9 @@ Este documento resume las reglas funcionales y operativas vigentes del sistema E
 ## 2) Reglas de autenticación y seguridad
 
 ## 2.1 Acceso a cPanel
-- Login por correo + contraseña.
+- Login por `login` técnico o correo + contraseña.
+- `root` accede mediante `ROOT_LOGIN` como identificador técnico; su correo no se usa como credencial visible de ingreso.
+- En auditoría y exports funcionales, la identidad visible de `root` debe persistirse y exponerse como `ROOT_LOGIN`, no como correo.
 - Usuario debe existir y estar activo (o root con contraseña raíz).
 - Se aplica rate-limit por intentos fallidos:
   - Máximo 5 intentos.
@@ -47,6 +49,7 @@ Este documento resume las reglas funcionales y operativas vigentes del sistema E
 ## 3) Reglas de autorización por rol
 
 ## 3.1 Gestión de usuarios
+- Cada usuario administrativo debe tener un `login` único.
 - `root` puede crear/editar/eliminar (incluido hard delete) usuarios no-root.
 - `institucional` puede gestionar usuarios de menor jerarquía según matriz de creación.
 - No se puede eliminar/modificar root como usuario común.
@@ -105,6 +108,7 @@ Este documento resume las reglas funcionales y operativas vigentes del sistema E
 - Devuelve carreras y cursos para búsqueda y detalle.
 - Incluye campos enriquecidos y saneados para render:
   - `_activo`, `_inscripcionAbierta`, `documentos`, `planEstudiosPDF`, etc.
+- En modo restringido, la autenticación pública depende de Google Identity Services y de la disponibilidad de `GOOGLE_CLIENT_ID` en el backend.
 
 ## 7.2 Filtros
 - Búsqueda por texto + filtros combinables (tipo, subtipo, disciplina, modalidad, unidad, regional, estado, inscripción).
@@ -119,18 +123,21 @@ Este documento resume las reglas funcionales y operativas vigentes del sistema E
 ## 8) Reglas de auditoría y trazabilidad
 
 - Se registran acciones administrativas críticas (`CREAR`, `EDITAR`, `BAJA`, `ELIMINAR`, `IMPORT`, `EXPORT`, `LOGIN`).
+- Si el actor es `root`, la auditoría expone su identidad técnica y no su correo real.
 - Solo `root` puede consultar o limpiar auditoría.
 - Se mantiene ventana de hasta 500 registros.
 
 ## 9) Reglas de backup/restore
 
 - Exporta dataset funcional (carreras, usuarios, config, auditoría, catálogos).
+- El payload exportado debe enmascarar referencias funcionales al correo `root`, reemplazándolas por `ROOT_LOGIN`.
 - Import soporta compatibilidad con backups legacy y actuales.
 - Solo `root` puede importar/exportar.
 
 ## 10) Persistencia
 
-- Modo JSON (sin `DATABASE_URL`) o PostgreSQL (con `DATABASE_URL`).
+- Modo `auto`, `json` o `postgres` mediante `PERSISTENCE_MODE`.
+- En `auto`, PostgreSQL se usa si hay configuración DB; si no, el sistema cae a JSON.
 - Contrato API se mantiene estable entre modos.
 - En modo PostgreSQL se normaliza a tablas relacionales y se remapea al objeto de dominio.
 

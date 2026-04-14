@@ -9,17 +9,12 @@
  *  4. Si está en la lista → se muestra la app
  *  5. Si NO está en la lista → se muestra pantalla de acceso denegado
  *
- * IMPORTANTE: Reemplazá GOOGLE_CLIENT_ID con tu Client ID real de Google Cloud Console.
- * Instrucciones: https://console.cloud.google.com/apis/credentials
+ * El Client ID público se obtiene desde /api/access-mode.
+ * Debe configurarse en el servidor mediante GOOGLE_CLIENT_ID.
  */
 
-// ═══════════════════════════════════════════════════════
-// ⚠️  CONFIGURACIÓN — Reemplazar con tu Client ID real
-// ═══════════════════════════════════════════════════════
-const GOOGLE_CLIENT_ID = 'TU_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
-// ═══════════════════════════════════════════════════════
-
 const SESSION_KEY = 'unam_session';
+let googleClientId = '';
 
 // Estado de autenticación global
 window.currentUser = null;
@@ -61,11 +56,11 @@ function showLoginScreen() {
         </p>
 
         <div id="gsi-warning" style="display:none;margin:12px 0;padding:10px 14px;background:rgba(220,38,38,.07);border:1px solid rgba(220,38,38,.2);border-radius:8px;font-size:.8rem;color:#dc2626">
-          <strong>Configuración requerida:</strong> El administrador debe reemplazar <code>TU_GOOGLE_CLIENT_ID</code> en <code>frontend/js/auth.js</code> con el Client ID real de Google Cloud Console. <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:#dc2626">Ir a Google Cloud Console →</a>
+          <strong>Configuración requerida:</strong> el servidor debe exponer <code>GOOGLE_CLIENT_ID</code> para habilitar el acceso restringido con Google. <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:#dc2626">Ir a Google Cloud Console →</a>
         </div>
         <!-- Google One Tap / button -->
         <div id="g_id_onload"
-          data-client_id="${GOOGLE_CLIENT_ID}"
+          data-client_id="${googleClientId}"
           data-context="signin"
           data-ux_mode="popup"
           data-callback="handleGoogleCallback"
@@ -164,6 +159,16 @@ function showLoadingScreen(message = 'Verificando acceso...') {
 // ── Google Sign-In ────────────────────────────────────────
 
 function initGoogleSignIn() {
+  if (!googleClientId) {
+    const warn = document.getElementById('gsi-warning');
+    const gsiBtn = document.querySelector('.g_id_signin');
+    const manualBtn = document.getElementById('manual-google-btn');
+    if (warn) warn.style.display = '';
+    if (gsiBtn) gsiBtn.style.display = 'none';
+    if (manualBtn) manualBtn.style.display = 'none';
+    return;
+  }
+
   if (!window.google?.accounts?.id) {
     // GSI failed to load (blocked, offline) — show manual button fallback
     const manualBtn = document.getElementById('manual-google-btn');
@@ -175,7 +180,7 @@ function initGoogleSignIn() {
 
   try {
     google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
+      client_id: googleClientId,
       callback: handleGoogleCallback,
       auto_select: false,
       cancel_on_tap_outside: true,
@@ -196,7 +201,7 @@ function initGoogleSignIn() {
     console.error('GSI init error:', err);
     const manualBtn = document.getElementById('manual-google-btn');
     if (manualBtn) manualBtn.style.display = 'flex';
-    if (GOOGLE_CLIENT_ID.includes('TU_GOOGLE_CLIENT_ID') || GOOGLE_CLIENT_ID.length < 20) {
+    if (!googleClientId || googleClientId.length < 20) {
       const warn = document.getElementById('gsi-warning');
       if (warn) warn.style.display = '';
     }
@@ -207,7 +212,7 @@ function triggerGoogleSignIn() {
   if (window.google?.accounts?.id) {
     google.accounts.id.prompt();
   } else {
-    alert('El inicio de sesión con Google no está disponible en este momento. Asegurate de que GOOGLE_CLIENT_ID esté configurado correctamente.');
+    alert('El inicio de sesión con Google no está disponible en este momento. Verificá la configuración de GOOGLE_CLIENT_ID y la carga del SDK.');
   }
 }
 
@@ -331,6 +336,7 @@ async function bootAuth() {
     if (modeRes.ok) {
       const modeData = await modeRes.json();
       isOpenAccess = modeData.open !== false;
+      googleClientId = String(modeData.googleClientId || '').trim();
     }
   } catch {
     // If server unreachable, assume restricted for safety

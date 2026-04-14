@@ -23,6 +23,13 @@ if [[ -f "$PID_FILE" ]]; then
     echo "Estado: en ejecución"
     echo "PID: $PID"
     echo "URL: http://localhost:$PORT"
+    if command -v curl >/dev/null 2>&1; then
+      if curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then
+        echo "Health: OK"
+      else
+        echo "Health: sin respuesta"
+      fi
+    fi
     echo "Log: $LOG_FILE"
     exit 0
   fi

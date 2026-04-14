@@ -1,267 +1,261 @@
-# 🎓 EAD — Plataforma Educativa Universitaria
+# EAD - Plataforma de Educacion a Distancia UNaM
 
-Aplicación web completa de educación a distancia con buscador avanzado de carreras, filtros combinados en tiempo real, y diseño dark mode moderno.
+Aplicacion web institucional para publicar y administrar la oferta academica de la UNaM. El sistema tiene dos superficies:
 
----
+- sitio publico para consulta de carreras y cursos
+- cPanel administrativo para gestionar propuestas, usuarios, configuracion, auditoria y backups
 
-## 📁 Estructura del proyecto
+## Estado actual
 
-```
+La implementacion vigente usa:
+
+- backend Node.js con servidor HTTP propio en [backend/server-standalone.js](/home/usr/Documentos/gci/devops_/ead/backend/server-standalone.js)
+- frontend publico SPA en HTML/CSS/JS vanilla
+- cPanel administrativo en HTML/CSS/JS vanilla
+- persistencia con seleccion automatica:
+  - PostgreSQL si hay configuracion de base o `PERSISTENCE_MODE=postgres`
+  - JSON legado si `PERSISTENCE_MODE=json` o `PERSISTENCE_MODE=auto` sin DB
+
+La documentacion funcional principal esta en:
+
+- [docs/funcionalidades-sistema.md](/home/usr/Documentos/gci/devops_/ead/docs/funcionalidades-sistema.md)
+- [docs/reglas-negocio.md](/home/usr/Documentos/gci/devops_/ead/docs/reglas-negocio.md)
+
+## Estructura
+
+```text
 ead/
 ├── backend/
-│   ├── server-standalone.js   # Servidor principal (API pública + admin)
-│   ├── admin/                 # Router admin, auth, backup
-│   ├── persistence/           # PgStore, esquema SQL, config DB
-│   ├── repositories/          # Repositorio de estado
-│   ├── scripts/               # Migración e importación de datos
-│   └── data/
-│       └── db.json            # Dataset legado para import inicial
+│   ├── admin/             # auth, router admin, backup
+│   ├── config/            # carga de variables de entorno
+│   ├── data/              # dataset JSON legado
+│   ├── domain/            # constantes de dominio compartidas
+│   ├── persistence/       # stores JSON/PostgreSQL, schema y tests
+│   ├── repositories/      # fachada de estado
+│   ├── scripts/           # migracion, import y smoke tests
+│   └── server-standalone.js
 ├── frontend/
-│   ├── index.html             # SPA shell
-│   ├── cpanel.html            # cPanel administrativo
 │   ├── css/
-│   │   └── styles.css         # Design system completo
-│   └── js/
-│       └── app.js             # Lógica, router, API client
-├── docs/                      # Reglas de negocio y documentación funcional
-├── package.json
-└── README.md
+│   ├── js/
+│   │   ├── cpanel-shared.js # modulo comun del cPanel y contrato de estado compartido
+│   │   ├── cpanel-careers.js # modulo de gestion de carreras/cursos del cPanel
+│   │   ├── cpanel-users.js # modulo de gestion de usuarios y claves del cPanel
+│   │   ├── cpanel-config.js # modulo de configuracion operativa del cPanel
+│   │   ├── cpanel-logs.js # modulo de auditoria/logs del cPanel
+│   │   ├── cpanel-backup.js # modulo de export/import del cPanel
+│   │   ├── cpanel-core.js # auth, shell, dashboard e inicializacion del cPanel
+│   │   ├── cpanel-shared.test.js # tests del estado/utilidades compartidas del cPanel
+│   │   ├── cpanel-modules.test.js # tests de contratos de modulos del cPanel
+│   │   ├── cpanel-core.test.js # tests de flujos criticos del core del cPanel
+│   │   ├── cpanel-careers.test.js # tests de reglas y validaciones del formulario de carreras
+│   ├── e2e/
+│   │   ├── cpanel-admin.e2e.test.js # E2E real de navegador para login admin y alta de curso EaD
+│   ├── public/
+│   ├── uploads/
+│   ├── vendor/pdfjs/
+│   ├── cpanel.html
+│   └── index.html
+├── docs/
+├── scripts/
+├── .env.example
+└── package.json
 ```
 
----
+## Requisitos
 
-## 🚀 Instalación y ejecución
+- Node.js 18+
+- npm 8+
+- PostgreSQL 14+ si vas a trabajar en modo DB
 
-### Requisitos
-- Node.js v18 o superior
-- npm v8 o superior
-- PostgreSQL 14+ (recomendado)
+## Variables de entorno
 
-### Pasos
+Base:
 
 ```bash
-# 1. Clonar o descomprimir el proyecto
-cd ead
+NODE_ENV=development
+PORT=3000
+PERSISTENCE_MODE=auto
+ADMIN_JWT_SECRET=changeme-super-secret
+ROOT_EMAIL=root@unam.edu.ar
+ROOT_LOGIN=root-unam
+ROOT_PASSWORD=changeme-root-password
+GOOGLE_CLIENT_ID=
+ALLOWED_PUBLIC_EMAILS=
+REQUIRE_HTTPS=false
+TRUST_PROXY_HEADERS=true
+```
 
-# 2. Instalar dependencias
+El acceso `root` usa `ROOT_LOGIN` como identificador técnico de ingreso. El correo root queda como dato interno y no hace falta exponerlo para iniciar sesión.
+Ademas, las superficies funcionales de auditoria y exportacion de backups muestran la identidad tecnica del `root` en lugar de su correo.
+En producción, `ADMIN_JWT_SECRET` debe tener al menos 32 caracteres aleatorios; si no, el backend falla al arrancar.
+
+PostgreSQL:
+
+```bash
+# opcion 1
+DATABASE_URL=postgres://user:pass@localhost:5432/ead
+
+# opcion 2
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_NAME=ead
+DB_USER=postgres
+DB_PASSWORD=postgres
+PGSSL_DISABLE=true
+```
+
+JSON legado:
+
+```bash
+PERSISTENCE_MODE=json
+# opcional
+JSON_DB_PATH=backend/data/db.json
+```
+
+## Arranque rapido
+
+Modo automatico recomendado:
+
+```bash
 npm install
-
-# 3. Configurar variables de entorno
 cp .env.example .env.local
-# editar .env.local con credenciales PostgreSQL
-
-# 4. Crear esquema en PostgreSQL
-npm run db:migrate
-
-# 5. (opcional, primera vez) importar datos seed desde JSON legado
-npm run db:seed
-
-# 6. Iniciar en modo producción
-npm start
-
-# O en modo desarrollo (con hot reload)
-npm run dev
-```
-
-El servidor estará disponible en: **http://localhost:3000**
-
-### Arranque diario (recomendado)
-
-Para empezar a trabajar rápidamente cada vez que prendés la PC:
-
-```bash
-# Levantar proyecto en background (modo desarrollo)
 ./scripts/ead-up.sh dev
+```
 
-# Ver estado
+Comandos utiles:
+
+```bash
 ./scripts/ead-status.sh
-
-# Detener proyecto
 ./scripts/ead-down.sh
+./scripts/install-systemd-user-service.sh
+npm test
+npm run test:e2e:cpanel
+npm run backup:smoke
+npm run security:review-content
 ```
 
-Si querés que se inicie automáticamente al iniciar sesión en Linux:
+`./scripts/ead-up.sh dev` ahora privilegia estabilidad para dejar el backend corriendo en segundo plano. Si necesitás reinicio automático por cambios de código, usá `./scripts/ead-up.sh watch`.
+
+En Linux, la opción más robusta para evitar caídas del backend al cerrar terminal o sesión gráfica es instalar el servicio de usuario:
 
 ```bash
-./scripts/install-autostart-linux.sh
+./scripts/install-systemd-user-service.sh
+systemctl --user daemon-reload
+systemctl --user enable --now ead-project.service
 ```
 
----
+`npm test` cubre backend y una base de regresion del frontend admin para contratos de modulos, estado compartido, flujos criticos del core y reglas complejas del formulario de carreras del cPanel.
 
-## 🔌 API REST
+`npm run test:e2e:cpanel` ejecuta un flujo real de navegador con `chromedriver + chromium`: restaura sesión admin, crea un curso de EaD en un store JSON temporal y verifica su presencia en el listado del cPanel.
 
-### Base URL
-```
-http://localhost:3000/api
-```
+## Modos de persistencia
 
-### Endpoints
+### PostgreSQL
 
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/api/careers` | Lista y busca carreras con filtros |
-| GET | `/api/careers/featured` | Carreras populares, nuevas y áreas |
-| GET | `/api/careers/filters` | Opciones de filtro disponibles |
-| GET | `/api/careers/:id` | Detalle de una carrera por ID |
-| GET | `/api/health` | Estado del servidor |
-
-### Parámetros de búsqueda (`GET /api/careers`)
-
-| Parámetro | Tipo | Descripción |
-|-----------|------|-------------|
-| `q` | string | Búsqueda por texto (nombre, descripción, institución) |
-| `tipo` | string | Pregrado, Grado, Posgrado (separados por coma) |
-| `area` | string | Área de conocimiento (separados por coma) |
-| `modalidad` | string | Online, Híbrido (separados por coma) |
-| `page` | number | Página actual (default: 1) |
-| `limit` | number | Resultados por página (default: 12) |
-| `sort` | string | `nombre` o `area` |
-
-### Ejemplos
+Recomendado para trabajo normal, pruebas integrales y despliegue.
 
 ```bash
-# Buscar carreras de tecnología online
-GET /api/careers?area=Tecnología&modalidad=Online
-
-# Buscar posgrados con "data"
-GET /api/careers?q=data&tipo=Posgrado
-
-# Múltiples filtros combinados
-GET /api/careers?tipo=Grado,Posgrado&area=Ingeniería&sort=nombre
-
-# Paginación
-GET /api/careers?page=2&limit=6
-```
-
----
-
-## 🎨 Funcionalidades implementadas
-
-### Frontend
-- ✅ SPA con router client-side (sin recargas)
-- ✅ Landing page con hero section, búsqueda y estadísticas
-- ✅ Secciones: carreras populares, áreas más buscadas, nuevas ofertas
-- ✅ Buscador con debounce (350ms)
-- ✅ Filtros combinados en tiempo real
-- ✅ Chips de filtros activos con botón de remoción
-- ✅ Ordenamiento por nombre y área
-- ✅ Paginación
-- ✅ Estados: loading (skeleton), sin resultados, error
-- ✅ Página de detalle completa (plan de estudios, requisitos, CTA)
-- ✅ Diseño responsive mobile-first
-- ✅ Tema oscuro moderno (CSS variables)
-- ✅ Animaciones y micro-interacciones
-
-### Backend
-- ✅ API REST con Express
-- ✅ Búsqueda full-text (nombre, descripción, institución, área)
-- ✅ Filtros múltiples combinables
-- ✅ Paginación server-side
-- ✅ Manejo de errores
-- ✅ CORS habilitado
-- ✅ Servicio de archivos estáticos integrado
-
----
-
-## 📊 Datos incluidos (20 carreras)
-
-| Área | Cantidad |
-|------|----------|
-| Tecnología | 5 |
-| Ingeniería | 5 |
-| Salud | 4 |
-| Ciencias Sociales | 4 |
-| Negocios | 3 |
-
-| Tipo | Cantidad |
-|------|----------|
-| Grado | 10 |
-| Pregrado | 6 |
-| Posgrado | 4 |
-
----
-
-## 🔧 Variables de entorno (PostgreSQL)
-
-| Variable | Default | Descripción |
-|----------|---------|-------------|
-| `PORT` | 3000 | Puerto del servidor |
-| `DATABASE_URL` | _(vacío)_ | Cadena de conexión PostgreSQL completa (prioritaria) |
-| `DB_HOST` | _(vacío)_ | Host PostgreSQL (alternativa a DATABASE_URL) |
-| `DB_PORT` | 5432 | Puerto PostgreSQL |
-| `DB_NAME` | _(vacío)_ | Nombre de base |
-| `DB_USER` | _(vacío)_ | Usuario PostgreSQL |
-| `DB_PASSWORD` | _(vacío)_ | Contraseña PostgreSQL |
-| `PGSSL_DISABLE` | `false` | Si es `true`, desactiva SSL al conectar a PostgreSQL |
-| `ADMIN_JWT_SECRET` | _(obligatoria en producción)_ | Clave fuerte para firmar JWT del cPanel |
-| `ROOT_PASSWORD` | _(obligatoria para root)_ | Contraseña del usuario root del cPanel |
-
-## 🗄️ Persistencia (PostgreSQL principal)
-
-La aplicación usa PostgreSQL como backend de persistencia principal para todo CRUD y lectura.
-El contrato JSON de respuesta de la API pública/admin se mantiene.
-
-### Esquema SQL inicial
-
-Archivo: `backend/persistence/schema.sql`
-
-Incluye tablas para:
-- carreras (`careers`) + relaciones (`career_units`, `career_tags`, `career_speakers`, `career_documents`)
-- usuarios (`users_admin`)
-- configuración (`app_config`)
-- auditoría (`audit_logs`)
-- catálogos/lookup (`lookup_values`)
-
-### Comandos de migración local
-
-```bash
-# 1) Definir variables en .env.local (DATABASE_URL o DB_*)
-
-# 2) Aplicar esquema
 npm run db:migrate
-
-# 3) Importar datos iniciales desde JSON legado (una sola vez)
-npm run db:import
-
-# 4) Levantar app
+npm run db:seed
 npm run dev
 ```
 
-### Notas de migración desde JSON
-- `backend/data/db.json` queda como dataset legado para bootstrap/migración.
-- El runtime de la app no usa JSON como store principal.
+### JSON
 
-## 🔐 Seguridad de cPanel
+Util para retomar rapido, revisar UI o trabajar sin base disponible.
 
-- El acceso al cPanel usa correo + contraseña.
-- Solo ingresan usuarios previamente cargados en `usuarios` y activos.
-- En producción, `ADMIN_JWT_SECRET` debe estar definido; si falta, el servidor no inicia.
-- `ROOT_PASSWORD` define la contraseña del usuario root.
-- El enlace al cPanel no aparece en el navbar público por defecto.
+```bash
+PERSISTENCE_MODE=json npm run dev
+```
 
-### Backup (compatibilidad)
+## Endpoints principales
 
-- `GET /admin/api/backup/export` mantiene `carreras` y `usuarios` y ahora también puede incluir:
-  `config`, `auditLog`, `unidadesAcademicas`, `regionales`, `localidades`, `disciplinas`,
-  `tiposDocumento`, `organismos`.
-- `POST /admin/api/backup/import` sigue aceptando backups viejos (solo `carreras`/`usuarios`)
-  y restaura también esos campos adicionales cuando están presentes.
+Publicos:
 
----
+- `GET /api/health`
+- `GET /api/access-mode`
+- `POST /api/auth/verify`
+- `GET /api/careers`
+- `GET /api/careers/featured`
+- `GET /api/careers/filters`
+- `GET /api/careers/:id`
 
-## 🛣️ Roadmap / Extensiones sugeridas
+Admin:
 
-- [ ] Autenticación de usuarios (JWT)
-- [ ] Guardar carreras favoritas
-- [ ] Formulario de preinscripción real
-- [ ] Panel de administración de carreras (CRUD)
-- [ ] Optimizar búsquedas SQL con índices trigram/full-text
-- [ ] Deploy en Railway / Render / Vercel
-- [ ] PWA (Service Worker + offline mode)
-- [ ] i18n (internacionalización)
+- `POST /admin/api/auth/login`
+- `GET /admin/api/auth/me`
+- `POST /admin/api/auth/change-password`
+- `GET|POST|PUT|PATCH|DELETE /admin/api/carreras`
+- `GET|POST|PUT|DELETE /admin/api/usuarios`
+- `GET /admin/api/config`
+- `GET|POST /admin/api/audit`
+- `GET|POST /admin/api/backup`
 
----
+El login admin acepta `identifier + password`, donde `identifier` puede ser el `login` técnico del usuario administrativo y, para usuarios no-root, también su correo.
 
-## 📄 Licencia
+## Acceso restringido del sitio publico
 
-MIT © 2025 EAD
+Cuando `acceso_publico=false`, el frontend pide login con Google Identity Services.
+
+- el backend publica `GOOGLE_CLIENT_ID` en `GET /api/access-mode`
+- el frontend valida el email contra `POST /api/auth/verify`
+- la validacion puede pasar por allow-list estatica y/o usuarios activos cargados en el sistema
+
+Si `GOOGLE_CLIENT_ID` no esta configurado, el frontend muestra una advertencia y no intenta inicializar el login restringido.
+
+## Uploads y documentos
+
+- planes de estudio: `frontend/uploads/planes`
+- documentos administrativos: `frontend/uploads/resoluciones`
+- limite por archivo: 20 MB
+- limite por request admin: 50 MB
+
+Podés ajustar estos límites por entorno con:
+
+- `ADMIN_MAX_UPLOAD_MB` (por archivo, admin)
+- `ADMIN_MAX_REQUEST_MB` (por request admin)
+- `ADMIN_MAX_CHUNK_MB` (por chunk en fallback de subida fragmentada)
+- `MAX_REQUEST_MB` (límite global de request en servidor)
+
+## Tests
+
+Hoy existen tests de:
+
+- asociacion de PDFs en carreras
+- configuracion de PostgreSQL
+- seleccion de store JSON/PostgreSQL
+
+Ejecucion:
+
+```bash
+npm test
+```
+
+## Publicacion segura
+
+Antes de exponer el sistema con dominio propio, completar esta secuencia:
+
+```bash
+npm run backup:export
+npm run backup:smoke
+npm run security:review-content
+npm run smoke:public -- https://tu-dominio
+```
+
+- poner `NODE_ENV=production`, `REQUIRE_HTTPS=true` y secretos reales en variables de entorno
+- rotar la contraseña `root` y las contraseñas administrativas para que el login exitoso migre hashes legacy a `scrypt`
+- revisar manualmente PDFs, formularios y contenido enriquecido ya cargado
+- validar en despliegue real login, export de backup, links PDF, errores 404 y rate limiting
+- usar `journalctl --user -u ead-project.service -f` o logs del proveedor para monitoreo básico y eventos `[security]`
+
+Existe una guía operativa más detallada en [docs/produccion-segura.md](/home/usr/Documentos/gci/devops_/ead/docs/produccion-segura.md).
+
+## Fuente de verdad
+
+Para retomar desarrollo, priorizar en este orden:
+
+1. `docs/funcionalidades-sistema.md`
+2. `docs/reglas-negocio.md`
+3. codigo en `backend/server-standalone.js`, `backend/admin/router.js`, `frontend/js/app.js` y `frontend/cpanel.html`
+
+El `README` intenta resumir el estado actual, pero la validacion final siempre debe hacerse contra esos archivos.

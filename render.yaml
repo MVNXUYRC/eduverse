@@ -14,3 +14,7 @@ services:
         value: production
       - key: PORT
         value: 3000
+      - key: REQUIRE_HTTPS
+        value: true
+      - key: TRUST_PROXY_HEADERS
+        value: true
