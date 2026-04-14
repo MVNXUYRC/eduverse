@@ -53,7 +53,7 @@ class PgStore {
         ORDER BY created_at DESC
       `);
       const newsletterDispatchLog = await client.query(`
-        SELECT id, scheduled_for, run_at, status, changes_detected, recipients_total, sent_count, message
+        SELECT id, dispatch_type, scheduled_for, run_at, status, changes_detected, recipients_total, sent_count, fail_count, diff_total, message
         FROM newsletter_dispatch_logs
         ORDER BY run_at DESC
         LIMIT 200
@@ -195,12 +195,15 @@ class PgStore {
           })),
           newsletterDispatchLog: newsletterDispatchLog.rows.map((l) => ({
             id: Number(l.id),
+            dispatchType: l.dispatch_type || 'automatico',
             scheduledFor: l.scheduled_for || null,
             runAt: l.run_at || null,
             status: l.status || 'unknown',
             changesDetected: !!l.changes_detected,
             recipientsTotal: Number(l.recipients_total || 0),
             sentCount: Number(l.sent_count || 0),
+            failCount: Number(l.fail_count || 0),
+            diffTotal: Number(l.diff_total || 0),
             message: l.message || '',
           })),
           unidadesAcademicas: lookupMap.unidadesAcademicas || [],
@@ -381,15 +384,18 @@ class PgStore {
 
       for (const l of toArray(state.newsletterDispatchLog).slice(0, 200)) {
         await client.query(
-          'INSERT INTO newsletter_dispatch_logs (id, scheduled_for, run_at, status, changes_detected, recipients_total, sent_count, message) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+          'INSERT INTO newsletter_dispatch_logs (id, dispatch_type, scheduled_for, run_at, status, changes_detected, recipients_total, sent_count, fail_count, diff_total, message) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
           [
             l.id || null,
+            l.dispatchType || (String(l.status || '').startsWith('manual') ? 'manual' : 'automatico'),
             l.scheduledFor || l.runAt || new Date().toISOString(),
             l.runAt || new Date().toISOString(),
             l.status || 'unknown',
             !!l.changesDetected,
             Number(l.recipientsTotal || 0),
             Number(l.sentCount || 0),
+            Number(l.failCount || 0),
+            Number(l.diffTotal || 0),
             l.message || '',
           ]
         );

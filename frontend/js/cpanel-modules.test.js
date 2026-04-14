@@ -133,6 +133,21 @@ test('las factories devuelven APIs modulares esperadas', () => {
   );
   assert.deepEqual(
     Object.keys(newsletter).sort(),
-    ['rnwl', 'setNewsletterPage', 'sortNewsletterBy', 'clearNewsletterFilters', 'exportNewsletterCsv', 'toggleNewsletterSubscription', 'deleteNewsletterSubscription'].sort(),
+    [
+      'rnwl',
+      'setNewsletterPage',
+      'setNewsletterLogPage',
+      'sortNewsletterBy',
+      'sortNewsletterLogBy',
+      'clearNewsletterFilters',
+      'clearNewsletterLogFilters',
+      'exportNewsletterCsv',
+      'exportNewsletterXlsx',
+      'submitNewsletterManual',
+      'importNewsletterFile',
+      'toggleNewsletterSubscription',
+      'deleteNewsletterSubscription',
+      'sendNewsletterDigestNow',
+    ].sort(),
   );
 });

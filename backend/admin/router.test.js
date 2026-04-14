@@ -2,9 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const XLSX = require('xlsx');
 
 const router = require('./router');
-const { hashPassword, legacyPasswordHash, verifyPasswordHash } = require('./auth');
+const {
+  hashPassword, legacyPasswordHash, verifyPasswordHash, signJWT,
+} = require('./auth');
 
 const uploadsRoot = path.join(__dirname, '../../frontend/uploads/resoluciones');
 
@@ -350,4 +353,125 @@ test('reset-platform exige seleccionar al menos un bloque a borrar', async () =>
 
   assert.equal(result.status, 400);
   assert.match(result.data.error, /Seleccioná al menos un tipo de dato/);
+});
+
+test('newsletter alta manual clasifica agregados, duplicados e inválidos', () => {
+  const state = {
+    newsletterSubscriptions: [
+      {
+        id: 1,
+        email: 'existente@unam.edu.ar',
+        source: 'sitio',
+        activo: true,
+        fechaAlta: new Date().toISOString(),
+      },
+    ],
+    newsletterDispatchLog: [],
+    config: {},
+  };
+  router.init(state, async () => {});
+
+  const result = router.__test.addNewsletterEmailsBatch(
+    [
+      'nuevo@unam.edu.ar',
+      'existente@unam.edu.ar',
+      'invalido',
+      'nuevo@unam.edu.ar',
+      'otro@unam.edu.ar',
+    ],
+    'manual',
+  );
+
+  assert.equal(result.stats.recibidos, 5);
+  assert.equal(result.stats.agregados, 2);
+  assert.equal(result.stats.duplicados, 2);
+  assert.equal(result.stats.invalidos, 1);
+  assert.equal(state.newsletterSubscriptions.length, 3);
+});
+
+test('newsletter importa primera hoja y primera columna desde xlsx con encabezado', () => {
+  router.init({ newsletterSubscriptions: [], newsletterDispatchLog: [], config: {} }, async () => {});
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['correo'],
+    ['valido@unam.edu.ar'],
+    ['invalido'],
+    ['valido@unam.edu.ar'],
+    [''],
+  ]);
+  XLSX.utils.book_append_sheet(wb, ws, 'Hoja1');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  const parsed = router.__test.parseNewsletterEmailsFromWorkbook({
+    filename: 'newsletter.xlsx',
+    data: buf,
+  });
+  assert.equal(parsed.readCount, 3);
+  assert.deepEqual(parsed.emails, ['valido@unam.edu.ar', 'invalido', 'valido@unam.edu.ar']);
+
+  const result = router.__test.addNewsletterEmailsBatch(parsed.emails, 'import');
+  assert.equal(result.stats.agregados, 1);
+  assert.equal(result.stats.duplicados, 1);
+  assert.equal(result.stats.invalidos, 1);
+});
+
+test('newsletter export genera archivo xlsx con nombre esperado', () => {
+  const state = {
+    newsletterSubscriptions: [
+      {
+        id: 1,
+        email: 'a@unam.edu.ar',
+        source: 'manual',
+        activo: true,
+        fechaAlta: '2026-01-10T10:00:00.000Z',
+        ultimoEnvio: null,
+      },
+      {
+        id: 2,
+        email: 'b@unam.edu.ar',
+        source: 'import',
+        activo: false,
+        fechaAlta: '2026-01-11T10:00:00.000Z',
+        ultimoEnvio: '2026-01-20T10:00:00.000Z',
+      },
+    ],
+    newsletterDispatchLog: [],
+    config: {},
+  };
+  router.init(state, async () => {});
+
+  const req = {
+    headers: {
+      authorization: `Bearer ${signJWT({
+        id: 'root',
+        login: 'root-unam',
+        email: 'root@unam.edu.ar',
+        rol: 'root',
+        unidades: [],
+      })}`,
+    },
+  };
+
+  const result = router.__test.handleNewsletterExport(req);
+  assert.equal(result.status, 200);
+  assert.match(result.data.filename, /^newsletter-contactos-\d{4}-\d{2}-\d{2}\.xlsx$/);
+  assert.ok(result.data.fileBase64);
+
+  const wb = XLSX.read(Buffer.from(result.data.fileBase64, 'base64'), { type: 'buffer' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].correo, 'b@unam.edu.ar');
+});
+
+test('newsletter log infiere tipo manual desde status legacy', () => {
+  const mapped = router.__test.mapDispatchLogRow({
+    id: 44,
+    status: 'manual-enviado',
+    recipientsTotal: 10,
+    sentCount: 8,
+  });
+  assert.equal(mapped.dispatchType, 'manual');
+  assert.equal(mapped.recipientsTotal, 10);
+  assert.equal(mapped.sentCount, 8);
 });

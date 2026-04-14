@@ -29,6 +29,12 @@ input,select,textarea{font-family:var(--fn);font-size:15px}ul{list-style:none}
 .ni{display:flex;align-items:center;gap:9px;padding:10px 14px;font-size:.9rem;color:rgba(255,255,255,.55);cursor:pointer;border-radius:0;margin:0;width:100%;transition:all var(--tr)}
 .ni:hover{background:rgba(255,255,255,.06);color:rgba(255,255,255,.9)}
 .ni.active{background:var(--cy);color:#fff;font-weight:500}
+.ni-parent{justify-content:space-between}
+.ni-caret{font-size:.72rem;color:rgba(255,255,255,.45);transition:transform var(--tr)}
+.ni-caret.open{transform:rotate(180deg);color:rgba(255,255,255,.9)}
+.ni-children{display:none}
+.ni-sub{padding-left:30px;font-size:.84rem;color:rgba(255,255,255,.5)}
+.ni-sub.active{background:rgba(0,149,204,.2);color:#fff}
 .sb-sep{height:1px;background:rgba(255,255,255,.12);margin:8px 14px}
 .sb-foot{margin-top:auto;padding:12px 14px;border-top:1px solid rgba(255,255,255,.06);position:relative}
 .sb-user{display:flex;align-items:center;gap:10px;cursor:pointer;border-radius:var(--r);padding:8px 10px;transition:background var(--tr)}.sb-user:hover{background:rgba(255,255,255,.06)}
@@ -285,7 +291,15 @@ input,select,textarea{font-family:var(--fn);font-size:15px}ul{list-style:none}
     <div class="ni" id="nav-usr" data-page="usr" onclick="nav('usr')" style="display:none">Usuarios</div>
     <div class="sb-sep"></div>
     <div class="ni" id="nav-nov" data-page="nov" onclick="nav('nov')">Base de Interesados</div>
-    <div class="ni" id="nav-nwl" data-page="nwl" onclick="nav('nwl')" style="display:none">Newsletter</div>
+    <div class="ni ni-parent" id="nav-nwl-parent" data-page="nwl" onclick="nav('nwl')" style="display:none">
+      <span>Newsletter</span>
+      <span class="ni-caret" id="nav-nwl-caret">▾</span>
+    </div>
+    <div class="ni-children" id="nav-nwl-children">
+      <div class="ni ni-sub" id="nav-nwl-subs" data-page="nwl-subs" onclick="nav('nwl-subs')">Suscriptores</div>
+      <div class="ni ni-sub" id="nav-nwl-sends" data-page="nwl-sends" onclick="nav('nwl-sends')">Envíos</div>
+      <div class="ni ni-sub" id="nav-nwl-data" data-page="nwl-data" onclick="nav('nwl-data')">Data Exchange</div>
+    </div>
     <div class="sb-sep"></div>
     <div class="ni" id="nav-log" data-page="log" onclick="nav('log')" style="display:none">Logs</div>
     <div class="ni" id="nav-bkp" data-page="bkp" onclick="nav('bkp')" style="display:none">Backup</div>

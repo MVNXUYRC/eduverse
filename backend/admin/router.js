@@ -7,6 +7,7 @@
  */
 const fs   = require('fs');
 const path = require('path');
+const XLSX = require('xlsx');
 const {
   ROOT_EMAIL, ROOT_LOGIN, ROLES, CAN_CREATE, EAD_UNIT,
   signJWT, requireAuth, requireRole,
@@ -1344,6 +1345,306 @@ function ensureNewsletterState() {
   return config.newsletterDigest;
 }
 
+function normalizeNewsletterEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function inferDispatchType(logRow) {
+  const explicit = String(logRow?.dispatchType || '').trim().toLowerCase();
+  if (explicit === 'manual' || explicit === 'automatico') return explicit;
+  const status = String(logRow?.status || '').trim().toLowerCase();
+  if (status.startsWith('manual')) return 'manual';
+  return 'automatico';
+}
+
+function mapDispatchLogRow(logRow) {
+  const recipientsTotal = Number(logRow?.recipientsTotal || 0);
+  const sentCount = Number(logRow?.sentCount || 0);
+  const hasExplicitFail = logRow?.failCount !== undefined && logRow?.failCount !== null;
+  const failRaw = Number(logRow?.failCount || 0);
+  const failCount = hasExplicitFail
+    ? (Number.isFinite(failRaw) && failRaw >= 0 ? failRaw : 0)
+    : Math.max(0, recipientsTotal - sentCount);
+  const diffTotal = Number(logRow?.diffTotal || 0);
+  return {
+    id: Number(logRow?.id || 0),
+    dispatchType: inferDispatchType(logRow),
+    scheduledFor: logRow?.scheduledFor || null,
+    runAt: logRow?.runAt || null,
+    status: String(logRow?.status || 'unknown'),
+    changesDetected: logRow?.changesDetected === true,
+    recipientsTotal,
+    sentCount,
+    failCount,
+    diffTotal,
+    message: String(logRow?.message || ''),
+  };
+}
+
+function parseManualEmailsInput(value) {
+  if (Array.isArray(value)) return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+  return String(value || '')
+    .split(/[\n,; \t]+/)
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean);
+}
+
+function addNewsletterEmailsBatch(inputEmails, sourceRaw) {
+  ensureNewsletterState();
+  const source = sanitizeText(sourceRaw || 'manual', 60) || 'manual';
+  const now = new Date().toISOString();
+  const existingSet = new Set((db().newsletterSubscriptions || []).map((row) => normalizeNewsletterEmail(row?.email)));
+  const seenInput = new Set();
+  const added = [];
+  const duplicated = [];
+  const invalid = [];
+  const received = Array.isArray(inputEmails) ? inputEmails.length : 0;
+
+  for (const raw of (inputEmails || [])) {
+    const email = normalizeNewsletterEmail(raw);
+    if (!email) continue;
+    if (!validateEmail(email)) {
+      invalid.push(email);
+      continue;
+    }
+    if (seenInput.has(email) || existingSet.has(email)) {
+      duplicated.push(email);
+      seenInput.add(email);
+      continue;
+    }
+    const row = {
+      id: nextId(db().newsletterSubscriptions),
+      email,
+      source,
+      activo: true,
+      fechaAlta: now,
+      actualizadoEn: now,
+      ultimoEnvio: null,
+    };
+    db().newsletterSubscriptions.push(row);
+    existingSet.add(email);
+    seenInput.add(email);
+    added.push(email);
+  }
+
+  return {
+    source,
+    received,
+    added,
+    duplicated,
+    invalid,
+    stats: {
+      recibidos: received,
+      agregados: added.length,
+      duplicados: duplicated.length,
+      invalidos: invalid.length,
+    },
+  };
+}
+
+function parseNewsletterEmailsFromWorkbook(filePart) {
+  const filename = String(filePart?.filename || '').trim();
+  const ext = path.extname(filename).toLowerCase();
+  if (!['.xlsx', '.xls', '.csv'].includes(ext)) {
+    const error = new Error('Formato no soportado. Usá .xlsx, .xls o .csv.');
+    error.status = 400;
+    throw error;
+  }
+  const workbook = XLSX.read(filePart?.data || Buffer.alloc(0), { type: 'buffer', raw: false });
+  const firstSheetName = workbook?.SheetNames?.[0];
+  if (!firstSheetName) return { emails: [], readCount: 0, filename, ext };
+  const firstSheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, raw: false, defval: '' });
+  const colValues = rows
+    .map((row) => (Array.isArray(row) ? row[0] : ''))
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  if (!colValues.length) return { emails: [], readCount: 0, filename, ext };
+  const firstValue = String(colValues[0] || '').trim().toLowerCase();
+  const shouldSkipHeader = !validateEmail(firstValue) && /(correo|mail|email|e-mail)/i.test(firstValue);
+  const emails = shouldSkipHeader ? colValues.slice(1) : colValues;
+  return { emails, readCount: emails.length, filename, ext };
+}
+
+async function handleNewsletterManualSubscriptions(req, body) {
+  const auth = requireRole(req, ROLES.ROOT);
+  if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
+  if (auth.user.rol !== ROLES.ROOT) return { status: 403, data: { error: 'Solo root puede realizar esta acción' } };
+
+  const input = parseManualEmailsInput(body?.emails);
+  if (!input.length) return { status: 400, data: { error: 'Ingresá al menos un correo electrónico.' } };
+  const result = addNewsletterEmailsBatch(input, body?.source || 'manual');
+  if (result.stats.agregados > 0) {
+    audit('CREAR', 'newsletter', `Alta manual: ${result.stats.agregados} agregado(s), ${result.stats.duplicados} duplicado(s), ${result.stats.invalidos} inválido(s).`, auth.user);
+    await save();
+  }
+
+  return {
+    status: 200,
+    data: {
+      success: true,
+      source: result.source,
+      stats: result.stats,
+      added: result.added,
+      duplicated: result.duplicated,
+      invalid: result.invalid,
+    },
+  };
+}
+
+async function handleNewsletterImport(req) {
+  const auth = requireRole(req, ROLES.ROOT);
+  if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
+  if (auth.user.rol !== ROLES.ROOT) return { status: 403, data: { error: 'Solo root puede realizar esta acción' } };
+
+  let body;
+  try {
+    body = await parseRequest(req);
+  } catch (err) {
+    return { status: err?.status || 400, data: { error: err?.message || 'No se pudo procesar el archivo.' } };
+  }
+
+  const filePart = body?.file
+    || body?.archivo
+    || body?.import
+    || Object.values(body || {}).find((entry) => entry && entry.filename && Buffer.isBuffer(entry.data));
+  if (!filePart || !filePart.filename || !Buffer.isBuffer(filePart.data)) {
+    return { status: 400, data: { error: 'Adjuntá un archivo válido para importar.' } };
+  }
+
+  let parsed;
+  try {
+    parsed = parseNewsletterEmailsFromWorkbook(filePart);
+  } catch (err) {
+    return { status: err?.status || 400, data: { error: err?.message || 'No se pudo leer el archivo.' } };
+  }
+
+  if (parsed.readCount === 0) {
+    return {
+      status: 200,
+      data: {
+        success: true,
+        filename: parsed.filename,
+        stats: {
+          leidos: 0,
+          validos: 0,
+          importados: 0,
+          duplicados: 0,
+          invalidos: 0,
+        },
+      },
+    };
+  }
+
+  const existingSet = new Set((db().newsletterSubscriptions || []).map((row) => normalizeNewsletterEmail(row?.email)));
+  const seenInFile = new Set();
+  const toImport = [];
+  let validCount = 0;
+  let duplicateCount = 0;
+  let invalidCount = 0;
+
+  for (const raw of parsed.emails) {
+    const email = normalizeNewsletterEmail(raw);
+    if (!email) continue;
+    if (!validateEmail(email)) {
+      invalidCount += 1;
+      continue;
+    }
+    validCount += 1;
+    if (seenInFile.has(email) || existingSet.has(email)) {
+      duplicateCount += 1;
+      seenInFile.add(email);
+      continue;
+    }
+    seenInFile.add(email);
+    toImport.push(email);
+  }
+
+  const batchResult = addNewsletterEmailsBatch(toImport, 'import');
+  if (batchResult.stats.agregados > 0) {
+    audit('IMPORT', 'newsletter', `Importación newsletter (${parsed.filename}): ${batchResult.stats.agregados} agregado(s), ${duplicateCount} duplicado(s), ${invalidCount} inválido(s).`, auth.user);
+    await save();
+  }
+
+  return {
+    status: 200,
+    data: {
+      success: true,
+      filename: parsed.filename,
+      stats: {
+        leidos: parsed.readCount,
+        validos: validCount,
+        importados: batchResult.stats.agregados,
+        duplicados: duplicateCount,
+        invalidos: invalidCount,
+      },
+    },
+  };
+}
+
+function handleNewsletterExport(req) {
+  const auth = requireRole(req, ROLES.ROOT);
+  if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
+  if (auth.user.rol !== ROLES.ROOT) return { status: 403, data: { error: 'Solo root puede realizar esta acción' } };
+
+  ensureNewsletterState();
+  const rows = (db().newsletterSubscriptions || [])
+    .map((row) => ({
+      correo: normalizeNewsletterEmail(row?.email),
+      origen: sanitizeText(row?.source || 'sitio', 60) || 'sitio',
+      estado: row?.activo !== false ? 'Activo' : 'Inactivo',
+      activo: row?.activo !== false ? 'Sí' : 'No',
+      fechaAlta: row?.fechaAlta || row?.actualizadoEn || '',
+      ultimoEnvio: row?.ultimoEnvio || '',
+    }))
+    .filter((row) => row.correo)
+    .sort((a, b) => new Date(b.fechaAlta || 0) - new Date(a.fechaAlta || 0));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 38 },
+    { wch: 14 },
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 20 },
+    { wch: 20 },
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Contactos');
+  const fileBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const stamp = new Date().toISOString().slice(0, 10);
+  return {
+    status: 200,
+    data: {
+      success: true,
+      filename: `newsletter-contactos-${stamp}.xlsx`,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      fileBase64: fileBuffer.toString('base64'),
+      total: rows.length,
+    },
+  };
+}
+
+function handleGetNewsletterDispatchLogs(req) {
+  const auth = requireRole(req, ROLES.ROOT);
+  if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
+  ensureNewsletterState();
+  const rows = (db().newsletterDispatchLog || []).map(mapDispatchLogRow)
+    .sort((a, b) => new Date(b.runAt || 0) - new Date(a.runAt || 0));
+  return {
+    status: 200,
+    data: {
+      data: rows,
+      summary: {
+        total: rows.length,
+        manuales: rows.filter((row) => row.dispatchType === 'manual').length,
+        automaticos: rows.filter((row) => row.dispatchType === 'automatico').length,
+      },
+    },
+  };
+}
+
 function nextWeeklyRunUtc(baseDate, digestCfg) {
   const now = new Date(baseDate || Date.now());
   const weekday = Number.isInteger(digestCfg?.weekdayUtc) ? digestCfg.weekdayUtc : 1;
@@ -1410,7 +1711,7 @@ function handleGetNewsletterSubscriptions(req, params) {
         lastSentAt: digestCfg.lastSentAt || null,
         lastContentHash: digestCfg.lastContentHash || '',
       },
-      dispatchLog: (db().newsletterDispatchLog || []).slice(0, 20),
+      dispatchLog: (db().newsletterDispatchLog || []).slice(0, 50).map(mapDispatchLogRow),
     },
   };
 }
@@ -1565,8 +1866,25 @@ async function handleAdminAPI(req, res, pathname, params, jsonResponse, readBody
     }
   }
   if (r0==='newsletter') {
+    if (segs[1]==='logs' && !segs[2] && m==='GET') {
+      const r = handleGetNewsletterDispatchLogs(req);
+      return jsonResponse(res, r.data, r.status);
+    }
     if (segs[1]==='subscriptions' && !segs[2] && m==='GET') {
       const r = handleGetNewsletterSubscriptions(req, params);
+      return jsonResponse(res, r.data, r.status);
+    }
+    if (segs[1]==='subscriptions' && segs[2]==='manual' && m==='POST') {
+      const b = await readBody(req);
+      const r = await handleNewsletterManualSubscriptions(req, b);
+      return jsonResponse(res, r.data, r.status);
+    }
+    if (segs[1]==='subscriptions' && segs[2]==='import' && m==='POST') {
+      const r = await handleNewsletterImport(req);
+      return jsonResponse(res, r.data, r.status);
+    }
+    if (segs[1]==='subscriptions' && segs[2]==='export' && m==='GET') {
+      const r = handleNewsletterExport(req);
       return jsonResponse(res, r.data, r.status);
     }
     if (segs[1]==='subscriptions' && segs[2] && m==='PATCH') {
@@ -1716,5 +2034,9 @@ module.exports = {
     handlePlatformReset,
     safeUser,
     ensureUserLogin,
+    addNewsletterEmailsBatch,
+    parseNewsletterEmailsFromWorkbook,
+    mapDispatchLogRow,
+    handleNewsletterExport,
   },
 };

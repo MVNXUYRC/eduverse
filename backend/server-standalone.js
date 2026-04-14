@@ -429,12 +429,15 @@ function appendNewsletterDispatchLog(entry) {
   ensureNewsletterState();
   const log = {
     id: nextDispatchId(db.newsletterDispatchLog),
+    dispatchType: String(entry.dispatchType || 'automatico'),
     scheduledFor: toUtcIsoDate(entry.scheduledFor) || new Date().toISOString(),
     runAt: new Date().toISOString(),
     status: String(entry.status || 'unknown'),
     changesDetected: !!entry.changesDetected,
     recipientsTotal: Number(entry.recipientsTotal || 0),
     sentCount: Number(entry.sentCount || 0),
+    failCount: Number(entry.failCount || 0),
+    diffTotal: Number(entry.diffTotal || 0),
     message: String(entry.message || ''),
   };
   db.newsletterDispatchLog.unshift(log);
@@ -842,11 +845,14 @@ async function runWeeklyNewsletterDigestIfNeeded(now = new Date()) {
     if (!changesDetected) {
       cfg.lastRunAt = new Date().toISOString();
       appendNewsletterDispatchLog({
+        dispatchType: 'automatico',
         scheduledFor,
         status: 'sin-cambios',
         changesDetected: false,
         recipientsTotal,
         sentCount: 0,
+        failCount: 0,
+        diffTotal: 0,
         message: 'No hubo actualizaciones en la oferta académica desde el último envío semanal.',
       });
       await saveDB();
@@ -869,6 +875,7 @@ async function runWeeklyNewsletterDigestIfNeeded(now = new Date()) {
     let status = 'pendiente-configuracion';
     let message = `${diff.total} propuesta(s) con cambios (${diffSummary}). Sin SMTP configurado.`;
     let sentCount = 0;
+    let failCount = 0;
 
     const nowIso = now.toISOString();
 
@@ -880,6 +887,7 @@ async function runWeeklyNewsletterDigestIfNeeded(now = new Date()) {
       const emails = recipients.map((s) => String(s.email || '').trim().toLowerCase()).filter(Boolean);
       const sendResult = await sendNewsletterDigest(emails, diff, siteUrl);
       sentCount = sendResult.sentCount;
+      failCount = sendResult.failed ? sendResult.failed.length : Math.max(0, recipientsTotal - sentCount);
 
       if (sentCount > 0) {
         cfg.lastSentAt = nowIso;
@@ -916,6 +924,9 @@ async function runWeeklyNewsletterDigestIfNeeded(now = new Date()) {
       changesDetected: true,
       recipientsTotal,
       sentCount,
+      failCount,
+      diffTotal: diff.total,
+      dispatchType: 'automatico',
       message,
     });
     await saveDB();
@@ -1011,6 +1022,9 @@ async function sendManualNewsletterDigest() {
       changesDetected: diff.total > 0,
       recipientsTotal,
       sentCount,
+      failCount,
+      diffTotal: diff.total,
+      dispatchType: 'manual',
       message,
     });
     await saveDB();

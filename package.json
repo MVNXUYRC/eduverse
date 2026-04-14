@@ -21,7 +21,8 @@
   "dependencies": {
     "nodemailer": "^8.0.5",
     "pdfjs-dist": "^3.11.174",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "xlsx": "^0.18.5"
   },
   "optionalDependencies": {
     "cors": "^2.8.5",

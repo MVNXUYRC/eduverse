@@ -137,14 +137,21 @@ CREATE TABLE IF NOT EXISTS newsletter_subscriptions (
 
 CREATE TABLE IF NOT EXISTS newsletter_dispatch_logs (
   id BIGSERIAL PRIMARY KEY,
+  dispatch_type TEXT NOT NULL DEFAULT 'automatico',
   scheduled_for TIMESTAMPTZ NOT NULL,
   run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   status TEXT NOT NULL,
   changes_detected BOOLEAN NOT NULL DEFAULT FALSE,
   recipients_total INTEGER NOT NULL DEFAULT 0,
   sent_count INTEGER NOT NULL DEFAULT 0,
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  diff_total INTEGER NOT NULL DEFAULT 0,
   message TEXT DEFAULT ''
 );
+
+ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS dispatch_type TEXT NOT NULL DEFAULT 'automatico';
+ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS fail_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS diff_total INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS lookup_values (
   category TEXT NOT NULL,

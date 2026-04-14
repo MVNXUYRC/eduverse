@@ -184,6 +184,10 @@
 
   function showApp() {
     const me = getMe();
+    const setDisplay = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = value;
+    };
     const identityLine = document.getElementById('sbe');
     document.getElementById('s-login').classList.remove('on');
     document.getElementById('s-cp').classList.remove('on');
@@ -201,19 +205,28 @@
       identityLine.style.display = 'none';
     }
     document.getElementById('sbr').textContent = RL[me.rol] || me.rol;
-    document.getElementById('nav-usr').style.display = 'none';
-    document.getElementById('nav-nwl').style.display = 'none';
-    document.getElementById('nav-cfg').style.display = 'none';
-    document.getElementById('nav-log').style.display = 'none';
-    document.getElementById('nav-bkp').style.display = 'none';
-    if (me.rol === 'root' || me.rol === 'institucional') document.getElementById('nav-usr').style.display = 'flex';
+    setDisplay('nav-usr', 'none');
+    setDisplay('nav-nwl-parent', 'none');
+    setDisplay('nav-nwl-children', 'none');
+    setDisplay('nav-cfg', 'none');
+    setDisplay('nav-log', 'none');
+    setDisplay('nav-bkp', 'none');
+    if (me.rol === 'root' || me.rol === 'institucional') setDisplay('nav-usr', 'flex');
     if (me.rol === 'root') {
-      document.getElementById('nav-nwl').style.display = 'flex';
-      document.getElementById('nav-cfg').style.display = 'flex';
-      document.getElementById('nav-log').style.display = 'flex';
-      document.getElementById('nav-bkp').style.display = 'flex';
+      setDisplay('nav-nwl-parent', 'flex');
+      setDisplay('nav-cfg', 'flex');
+      setDisplay('nav-log', 'flex');
+      setDisplay('nav-bkp', 'flex');
     }
     nav('dash');
+  }
+
+  function setNewsletterMenuExpanded(expanded) {
+    const children = document.getElementById('nav-nwl-children');
+    const caret = document.getElementById('nav-nwl-caret');
+    if (!children || !caret) return;
+    children.style.display = expanded ? 'block' : 'none';
+    caret.classList.toggle('open', expanded);
   }
 
   function toggleUD(force) {
@@ -358,15 +371,37 @@
   function nav(page) {
     state.resetNavigationState();
     document.querySelectorAll('.ni').forEach((i) => i.classList.remove('active'));
-    const n = document.querySelector(`[data-page="${page}"]`);
-    if (n) n.classList.add('active');
-    const titles = { dash: 'Dashboard', carr: 'Propuestas Formativas', nov: 'Base de Interesados', nwl: 'Newsletter', usr: 'Usuarios', cfg: 'Configuración del Sistema', log: 'Logs', bkp: 'Backup' };
+    const isNewsletterPage = page === 'nwl' || page === 'nwl-subs' || page === 'nwl-sends' || page === 'nwl-data';
+    if (isNewsletterPage) {
+      document.getElementById('nav-nwl-parent')?.classList.add('active');
+      if (page !== 'nwl') document.querySelector(`[data-page="${page}"]`)?.classList.add('active');
+      setNewsletterMenuExpanded(true);
+    } else {
+      document.querySelector(`[data-page="${page}"]`)?.classList.add('active');
+      setNewsletterMenuExpanded(false);
+    }
+    const titles = {
+      dash: 'Dashboard',
+      carr: 'Propuestas Formativas',
+      nov: 'Base de Interesados',
+      nwl: 'Newsletter',
+      'nwl-subs': 'Newsletter · Suscriptores',
+      'nwl-sends': 'Newsletter · Envíos',
+      'nwl-data': 'Newsletter · Data Exchange',
+      usr: 'Usuarios',
+      cfg: 'Configuración del Sistema',
+      log: 'Logs',
+      bkp: 'Backup',
+    };
     document.getElementById('tbt').textContent = titles[page] || page;
     document.getElementById('ct').innerHTML = '<div class="empty"><div class="ei">⏳</div></div>';
     if (page === 'dash') rdash();
     if (page === 'carr') careersModule.rcarr();
     if (page === 'nov') novedadesModule.rnvd();
-    if (page === 'nwl') newsletterModule.rnwl();
+    if (page === 'nwl') newsletterModule.rnwl('overview');
+    if (page === 'nwl-subs') newsletterModule.rnwl('subscribers');
+    if (page === 'nwl-sends') newsletterModule.rnwl('sends');
+    if (page === 'nwl-data') newsletterModule.rnwl('data');
     if (page === 'usr') usersModule.rusr();
     if (page === 'cfg') configModule.rcfg();
     if (page === 'log') logsModule.rlog();

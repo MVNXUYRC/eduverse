@@ -153,12 +153,15 @@ function applyBackupPayload(state, payload) {
   if (Array.isArray(payload.newsletterDispatchLog)) {
     state.newsletterDispatchLog = payload.newsletterDispatchLog.slice(0, 200).map((row, idx) => ({
       id: Number(row?.id || idx + 1),
+      dispatchType: sanitizeText(row?.dispatchType, 20) || (String(row?.status || '').startsWith('manual') ? 'manual' : 'automatico'),
       scheduledFor: sanitizeText(row?.scheduledFor, 64) || null,
       runAt: sanitizeText(row?.runAt, 64) || null,
       status: sanitizeText(row?.status, 80) || 'unknown',
       changesDetected: row?.changesDetected === true,
       recipientsTotal: Number(row?.recipientsTotal || 0),
       sentCount: Number(row?.sentCount || 0),
+      failCount: Number(row?.failCount || 0),
+      diffTotal: Number(row?.diffTotal || 0),
       message: sanitizeText(row?.message, 400),
     }));
   }
