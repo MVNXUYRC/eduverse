@@ -53,7 +53,7 @@ class PgStore {
         ORDER BY created_at DESC
       `);
       const newsletterDispatchLog = await client.query(`
-        SELECT id, dispatch_type, scheduled_for, run_at, status, changes_detected, recipients_total, sent_count, fail_count, diff_total, message
+        SELECT id, dispatch_type, scheduled_for, run_at, window_start, window_end, status, changes_detected, recipients_total, sent_count, fail_count, diff_total, message, sections, diff, recipients, newsletter_html
         FROM newsletter_dispatch_logs
         ORDER BY run_at DESC
         LIMIT 200
@@ -198,6 +198,8 @@ class PgStore {
             dispatchType: l.dispatch_type || 'automatico',
             scheduledFor: l.scheduled_for || null,
             runAt: l.run_at || null,
+            windowStart: l.window_start || null,
+            windowEnd: l.window_end || null,
             status: l.status || 'unknown',
             changesDetected: !!l.changes_detected,
             recipientsTotal: Number(l.recipients_total || 0),
@@ -205,6 +207,10 @@ class PgStore {
             failCount: Number(l.fail_count || 0),
             diffTotal: Number(l.diff_total || 0),
             message: l.message || '',
+            sections: l.sections && typeof l.sections === 'object' ? l.sections : {},
+            diff: l.diff && typeof l.diff === 'object' ? l.diff : {},
+            recipients: Array.isArray(l.recipients) ? l.recipients : [],
+            newsletterHtml: l.newsletter_html || '',
           })),
           unidadesAcademicas: lookupMap.unidadesAcademicas || [],
         regionales: lookupMap.regionales || [],
@@ -384,12 +390,14 @@ class PgStore {
 
       for (const l of toArray(state.newsletterDispatchLog).slice(0, 200)) {
         await client.query(
-          'INSERT INTO newsletter_dispatch_logs (id, dispatch_type, scheduled_for, run_at, status, changes_detected, recipients_total, sent_count, fail_count, diff_total, message) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
+          'INSERT INTO newsletter_dispatch_logs (id, dispatch_type, scheduled_for, run_at, window_start, window_end, status, changes_detected, recipients_total, sent_count, fail_count, diff_total, message, sections, diff, recipients, newsletter_html) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16::jsonb,$17)',
           [
             l.id || null,
             l.dispatchType || (String(l.status || '').startsWith('manual') ? 'manual' : 'automatico'),
             l.scheduledFor || l.runAt || new Date().toISOString(),
             l.runAt || new Date().toISOString(),
+            l.windowStart || null,
+            l.windowEnd || null,
             l.status || 'unknown',
             !!l.changesDetected,
             Number(l.recipientsTotal || 0),
@@ -397,6 +405,10 @@ class PgStore {
             Number(l.failCount || 0),
             Number(l.diffTotal || 0),
             l.message || '',
+            JSON.stringify((l.sections && typeof l.sections === 'object') ? l.sections : {}),
+            JSON.stringify((l.diff && typeof l.diff === 'object') ? l.diff : {}),
+            JSON.stringify(Array.isArray(l.recipients) ? l.recipients : []),
+            l.newsletterHtml || '',
           ]
         );
       }

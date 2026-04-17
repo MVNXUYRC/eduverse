@@ -307,3 +307,95 @@ testHttp('newsletter clasifica como actualizada cuando no aplica una categoria s
     if (careerId) await apiRequest('DELETE', `/admin/api/carreras/${careerId}?hard=true`, undefined, token);
   }
 });
+
+testHttp('newsletter preview-manual refleja cambios de una propuesta editada', async () => {
+  const token = await loginRoot();
+  const unique = Date.now();
+  const payload = {
+    nombre: `Digest Preview ${unique}`,
+    esCurso: false,
+    tipo: 'Grado',
+    subtipo: '',
+    unidadesAcademicas: ['Facultad de Ingenieria'],
+    regional: 'Obera',
+    disciplina: 'Ciencias Aplicadas',
+    modalidad: '100% Virtual',
+    duracion: '3 anos',
+    descripcion: '<p>Preview inicial</p>',
+    contacto: 'digest.preview@unam.edu.ar',
+    telefonoContacto: '+54 3764 111222',
+    requisitosTexto: '<p>Requisitos</p>',
+    formularioInscripcion: '',
+    programa: '',
+    tags: ['digest', 'qa', 'preview'],
+    disertantes: [],
+    documentos: [],
+    nueva: false,
+    proximamente: false,
+    inscripcionAbiertaValor: false,
+    inscripcionAbiertaFecha: '',
+    activoValor: true,
+    activoFecha: '',
+  };
+
+  let careerId = null;
+  try {
+    const created = await apiRequest('POST', '/admin/api/carreras', payload, token);
+    assert.equal(created.res.status, 201, created.data.error || 'No se pudo crear carrera para test preview');
+    careerId = created.data.id;
+
+    const updated = await apiRequest('PUT', `/admin/api/carreras/${careerId}`, {
+      ...payload,
+      descripcion: '<p>Preview actualizado</p>',
+    }, token);
+    assert.equal(updated.res.status, 200, updated.data.error || 'No se pudo actualizar carrera para preview');
+
+    const preview = await apiRequest('GET', '/admin/api/newsletter/preview-manual', undefined, token);
+    assert.equal(preview.res.status, 200, preview.data.error || 'No se pudo obtener preview manual');
+    const diff = preview.data.preview?.diff || {};
+    const sections = ['nueva', 'inscripcionAbierta', 'proximamente', 'cierreProximo', 'cierreReciente', 'actualizadas'];
+    const reflected = sections.some((section) => (diff[section] || []).some((row) => Number(row.id) === Number(careerId)));
+    assert.equal(reflected, true, 'La preview debe incluir la propuesta editada');
+  } finally {
+    if (careerId) await apiRequest('DELETE', `/admin/api/carreras/${careerId}?hard=true`, undefined, token);
+  }
+});
+
+testHttp('newsletter debug data: modificadoEn antes/despues y presencia en preview', async () => {
+  const token = await loginRoot();
+  const list = await apiRequest('GET', '/admin/api/carreras?limit=20&page=1', undefined, token);
+  assert.equal(list.res.status, 200, list.data.error || 'No se pudo listar carreras');
+  const row = Array.isArray(list.data?.data) ? list.data.data.find((item) => item && item.id) : null;
+  assert.ok(row, 'Debe existir al menos una propuesta para el debug');
+
+  const beforeModified = row.modificadoEn || null;
+  const updated = await apiRequest('PUT', `/admin/api/carreras/${row.id}`, {
+    ...row,
+    descripcion: `${String(row.descripcion || '')}<p>debug-data-${Date.now()}</p>`,
+  }, token);
+  assert.equal(updated.res.status, 200, updated.data.error || 'No se pudo actualizar carrera en debug');
+  const afterModified = updated.data?.modificadoEn || null;
+
+  const preview = await apiRequest('GET', '/admin/api/newsletter/preview-manual', undefined, token);
+  assert.equal(preview.res.status, 200, preview.data.error || 'No se pudo obtener preview manual en debug');
+  const windowStart = preview.data?.preview?.windowStart || null;
+  const windowEnd = preview.data?.preview?.windowEnd || null;
+  const afterMs = afterModified ? new Date(afterModified).getTime() : NaN;
+  const startMs = windowStart ? new Date(windowStart).getTime() : NaN;
+  const endMs = windowEnd ? new Date(windowEnd).getTime() : NaN;
+  const modifiedInWindow = Number.isFinite(afterMs) && Number.isFinite(startMs) && Number.isFinite(endMs)
+    ? afterMs >= startMs && afterMs <= endMs
+    : false;
+  const diff = preview.data?.preview?.diff || {};
+  const sections = ['nueva', 'inscripcionAbierta', 'proximamente', 'cierreProximo', 'cierreReciente', 'actualizadas'];
+  const reflectedSection = sections.find((section) => (diff[section] || []).some((item) => Number(item.id) === Number(row.id))) || null;
+  const reflected = !!reflectedSection;
+
+  console.log(
+    `[newsletter-debug-data] id=${row.id} beforeModified=${beforeModified || 'null'} afterModified=${afterModified || 'null'} ` +
+    `windowStart=${windowStart || 'null'} windowEnd=${windowEnd || 'null'} modifiedInWindow=${modifiedInWindow} ` +
+    `reflected=${reflected} section=${reflectedSection || 'none'}`
+  );
+
+  assert.equal(reflected, true, 'La propuesta editada debe aparecer en la preview manual');
+});

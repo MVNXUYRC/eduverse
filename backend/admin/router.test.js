@@ -475,3 +475,116 @@ test('newsletter log infiere tipo manual desde status legacy', () => {
   assert.equal(mapped.recipientsTotal, 10);
   assert.equal(mapped.sentCount, 8);
 });
+
+test('admin api expone ruta canonica GET /admin/api/newsletter/preview-manual', async () => {
+  const state = { newsletterSubscriptions: [], newsletterDispatchLog: [], config: {} };
+  router.init(
+    state,
+    async () => {},
+    { getManualDigestPreview: () => ({ generatedAt: new Date().toISOString(), diff: { total: 1 }, sections: { actualizadas: 1 } }) }
+  );
+
+  const req = {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${signJWT({
+        id: 'root',
+        login: 'root-unam',
+        email: 'root@unam.edu.ar',
+        rol: 'root',
+        unidades: [],
+      })}`,
+    },
+  };
+
+  const params = new URLSearchParams();
+  let response = null;
+  const jsonResponse = (_res, data, status = 200) => {
+    response = { status, data };
+    return response;
+  };
+
+  await router.handleAdminAPI(req, {}, '/admin/api/newsletter/preview-manual', params, jsonResponse, async () => ({}));
+  assert.equal(response?.status, 200);
+  assert.equal(response?.data?.success, true);
+  assert.ok(response?.data?.preview);
+});
+
+test('newsletter send manual acepta selectedEmails y los propaga al helper', async () => {
+  const captured = { payload: null };
+  router.init(
+    { newsletterSubscriptions: [], newsletterDispatchLog: [], config: {} },
+    async () => {},
+    {
+      sendManualDigest: async (payload) => {
+        captured.payload = payload;
+        return {
+          sentCount: 1,
+          failCount: 0,
+          recipientsTotal: 1,
+          diffTotal: 1,
+          sections: { actualizadas: 1 },
+          status: 'manual-enviado',
+          message: 'ok',
+          windowStart: new Date().toISOString(),
+          windowEnd: new Date().toISOString(),
+          selection: { selectedTotal: 1, excludedTotal: 0 },
+        };
+      },
+    }
+  );
+
+  const req = {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${signJWT({
+        id: 'root',
+        login: 'root-unam',
+        email: 'root@unam.edu.ar',
+        rol: 'root',
+        unidades: [],
+      })}`,
+    },
+  };
+  const params = new URLSearchParams();
+  let response = null;
+  const jsonResponse = (_res, data, status = 200) => {
+    response = { status, data };
+    return response;
+  };
+
+  await router.handleAdminAPI(
+    req,
+    {},
+    '/admin/api/newsletter/send',
+    params,
+    jsonResponse,
+    async () => ({ selectedKeys: ['actualizadas:1:hash'], selectedEmails: ['A@unam.edu.ar', 'b@unam.edu.ar'] })
+  );
+
+  assert.equal(response?.status, 200);
+  assert.deepEqual(captured.payload?.selectedKeys, ['actualizadas:1:hash']);
+  assert.deepEqual(captured.payload?.selectedEmails, ['a@unam.edu.ar', 'b@unam.edu.ar']);
+});
+
+test('newsletter detalle normaliza destinatarios legacy/mixtos sin duplicar', () => {
+  const mapped = router.__test.mapDispatchLogRow({
+    id: 99,
+    dispatchType: 'manual',
+    runAt: '2026-04-15T10:00:00.000Z',
+    recipientsTotal: 3,
+    recipients: [
+      { email: 'A@unam.edu.ar', status: 'enviado', sentAt: '2026-04-15T10:00:00.000Z', newsCount: 2 },
+      { to: 'b@unam.edu.ar', status: 'fallido', error: 'smtp' },
+      'a@unam.edu.ar',
+      { recipient: 'c@unam.edu.ar' },
+    ],
+  }, true);
+
+  assert.equal(Array.isArray(mapped.recipients), true);
+  assert.deepEqual(
+    mapped.recipients.map((item) => item.email),
+    ['a@unam.edu.ar', 'b@unam.edu.ar', 'c@unam.edu.ar']
+  );
+  assert.equal(mapped.recipients[1].status, 'fallido');
+});

@@ -36,6 +36,7 @@ const NEWSLETTER_DEFAULT_CFG = Object.freeze({
   lastContentHash: '',
   lastCarrerasSnapshot: null,
 });
+const NEWSLETTER_SECTION_ORDER = ['nueva', 'inscripcionAbierta', 'proximamente', 'cierreProximo', 'cierreReciente', 'actualizadas'];
 // ── DB ────────────────────────────────────────────────────
 const store = createStore();
 const stateRepo = new StateRepository(store);
@@ -77,7 +78,7 @@ const initPromise = initStore();
 
 // ── Admin module ──────────────────────────────────────────
 const adminRouter = require('./admin/router');
-const { sendInterestedNotification, hasMailConfig, sendNewsletterDigest, hasNewsletterMailConfig } = require('./admin/mailer');
+const { sendInterestedNotification, hasMailConfig, sendNewsletterDigest, hasNewsletterMailConfig, buildDigestEmailHtml } = require('./admin/mailer');
 
 // Proper save: persist, reload db reference, then UPDATE the router's db reference
 // without replacing the save function (that would break subsequent saves)
@@ -87,7 +88,10 @@ async function adminSave() {
   adminRouter.updateDb(db);
 }
 initPromise
-  .then(() => adminRouter.init(db, adminSave, { sendManualDigest: sendManualNewsletterDigest }))
+  .then(() => adminRouter.init(db, adminSave, {
+    sendManualDigest: sendManualNewsletterDigest,
+    getManualDigestPreview: getManualDigestPreview,
+  }))
   .catch((err) => {
     console.error('Error inicializando storage:', err.message);
     process.exit(1);
@@ -284,10 +288,30 @@ function getLastWeeklyOccurrenceUtc(now, cfg) {
   return scheduled;
 }
 function carreraContentHash(c) {
+  const activeState = typeof c.activo === 'object' && c.activo !== null
+    ? { valor: !!c.activo.valor, fechaHasta: c.activo.fechaHasta || null }
+    : { valor: c.activo !== false, fechaHasta: null };
+  const inscriptionState = typeof c.inscripcionAbierta === 'object' && c.inscripcionAbierta !== null
+    ? { valor: !!c.inscripcionAbierta.valor, fechaHasta: c.inscripcionAbierta.fechaHasta || null }
+    : { valor: !!c.inscripcionAbierta, fechaHasta: null };
+  const tags = Array.isArray(c.tags) ? c.tags.map((item) => String(item || '').trim()) : [];
+  const speakers = Array.isArray(c.disertantes) ? c.disertantes.map((item) => String(item || '').trim()) : [];
+  const docs = Array.isArray(c.documentos)
+    ? c.documentos.map((doc) => ({
+      tipo: String(doc?.tipo || '').trim(),
+      organismo: String(doc?.organismo || '').trim(),
+      numero: String(doc?.numero || '').trim(),
+      anio: String(doc?.anio || '').trim(),
+      pdf: String(doc?.pdf || '').trim(),
+    }))
+    : [];
   const fields = [
     c.nombre, c.tipo, c.esCurso, c.modalidad, c.duracion, c.descripcion,
     c.subtipo, c.disciplina, c.contacto, c.requisitosTexto, c.alcancesTitulo,
-    c.formularioInscripcion, c.programa, c.unidadAcademica, c.regional,
+    c.formularioInscripcion, c.programa, c.unidadAcademica, c.regional, c.telefonoContacto,
+    c.planEstudiosPDF, c.proximamente, c.nueva, c.popular,
+    JSON.stringify(activeState), JSON.stringify(inscriptionState),
+    JSON.stringify(tags), JSON.stringify(speakers), JSON.stringify(docs),
     JSON.stringify((Array.isArray(c.unidadesAcademicas) ? c.unidadesAcademicas : []).slice().sort()),
   ];
   return crypto.createHash('sha256').update(JSON.stringify(fields)).digest('hex');
@@ -311,6 +335,7 @@ function buildCarrerasSnapshotEntries() {
       contentHash: carreraContentHash(c),
       formularioInscripcion: String(c.formularioInscripcion || '').trim() || null,
       modalidad: String(c.modalidad || '').trim() || null,
+      creadoEn: c.creadoEn || null,
     };
   }).sort((a, b) => a.id - b.id);
 }
@@ -339,11 +364,23 @@ function buildNewsletterDiff(currentCarreras, lastCarreras, windowStart, windowE
   const windowEndMs = windowEnd instanceof Date ? windowEnd.getTime() : new Date(windowEnd).getTime();
 
   function isUpdatedInWindow(curr, prev) {
-    if (!prev) return false;
-    if (curr.contentHash === prev.contentHash || !curr.modificadoEn) return false;
+    if (!curr.modificadoEn) return false;
     const modMs = new Date(curr.modificadoEn).getTime();
     if (!Number.isFinite(modMs) || !Number.isFinite(windowStartMs) || !Number.isFinite(windowEndMs)) return false;
-    return modMs >= windowStartMs && modMs <= windowEndMs;
+    if (modMs < windowStartMs || modMs > windowEndMs) return false;
+    // Si no hay baseline previo para este id, igual consideramos la modificación
+    // dentro de la ventana como "actualizada" (snapshot previo desfasado/incompleto).
+    if (!prev) return true;
+    const hashChanged = curr.contentHash !== prev.contentHash;
+    const modifiedAtChanged = String(curr.modificadoEn || '') !== String(prev.modificadoEn || '');
+    return hashChanged || modifiedAtChanged;
+  }
+
+  function isCreatedInWindow(curr) {
+    if (!curr?.creadoEn) return false;
+    const createdMs = new Date(curr.creadoEn).getTime();
+    if (!Number.isFinite(createdMs) || !Number.isFinite(windowStartMs) || !Number.isFinite(windowEndMs)) return false;
+    return createdMs >= windowStartMs && createdMs <= windowEndMs;
   }
 
   function withUpdateFlag(curr, updatedInWindow) {
@@ -364,9 +401,17 @@ function buildNewsletterDiff(currentCarreras, lastCarreras, windowStart, windowE
     const prev = lastById.get(curr.id);
     const updatedInWindow = isUpdatedInWindow(curr, prev);
 
-    // A — Nueva: no existía en el snapshot anterior
+    // A — Nueva: no existía en el snapshot anterior.
+    // Si el snapshot previo no lo trae pero la propuesta fue creada esta semana, es "nueva";
+    // si no fue creada esta semana y sí se modificó en ventana, la tratamos como "actualizada".
     if (!prev) {
-      result.nueva.push(curr);
+      if (isCreatedInWindow(curr)) {
+        result.nueva.push(curr);
+      } else if (updatedInWindow) {
+        result.actualizadas.push(withUpdateFlag(curr, true));
+      } else {
+        result.nueva.push(curr);
+      }
       continue;
     }
 
@@ -425,13 +470,155 @@ function buildNewsletterDiff(currentCarreras, lastCarreras, windowStart, windowE
   return result;
 }
 
+function normalizeDigestDiff(diff) {
+  const safe = diff && typeof diff === 'object' ? diff : {};
+  const normalized = {};
+  for (const section of NEWSLETTER_SECTION_ORDER) {
+    normalized[section] = Array.isArray(safe[section]) ? safe[section].map((item) => ({ ...item })) : [];
+  }
+  normalized.total = NEWSLETTER_SECTION_ORDER.reduce((acc, section) => acc + normalized[section].length, 0);
+  return normalized;
+}
+
+function digestItemKey(section, item) {
+  const idPart = Number(item?.id || 0);
+  const hashPart = String(item?.contentHash || '').slice(0, 12);
+  return `${section}:${idPart}:${hashPart || 'na'}`;
+}
+
+function withDigestKeys(diff) {
+  const normalized = normalizeDigestDiff(diff);
+  const keyed = {};
+  for (const section of NEWSLETTER_SECTION_ORDER) {
+    keyed[section] = normalized[section].map((item) => ({ ...item, _key: digestItemKey(section, item) }));
+  }
+  keyed.total = normalized.total;
+  return keyed;
+}
+
+function summarizeDiffSections(diff) {
+  return {
+    nueva: Number(diff?.nueva?.length || 0),
+    inscripcionAbierta: Number(diff?.inscripcionAbierta?.length || 0),
+    proximamente: Number(diff?.proximamente?.length || 0),
+    cierreProximo: Number(diff?.cierreProximo?.length || 0),
+    cierreReciente: Number(diff?.cierreReciente?.length || 0),
+    actualizadas: Number(diff?.actualizadas?.length || 0),
+  };
+}
+
+function buildDiffSummaryLabel(diff) {
+  const sections = summarizeDiffSections(diff);
+  return [
+    sections.nueva && `${sections.nueva} nueva(s)`,
+    sections.inscripcionAbierta && `${sections.inscripcionAbierta} inscripción abierta`,
+    sections.proximamente && `${sections.proximamente} próximamente`,
+    sections.cierreProximo && `${sections.cierreProximo} cierre próximo`,
+    sections.cierreReciente && `${sections.cierreReciente} cierre reciente`,
+    sections.actualizadas && `${sections.actualizadas} actualizada(s)`,
+  ].filter(Boolean).join(', ');
+}
+
+function buildDiffPayloadForLog(diff) {
+  const withKeys = withDigestKeys(diff);
+  const out = {};
+  for (const section of NEWSLETTER_SECTION_ORDER) {
+    out[section] = withKeys[section].map((item) => ({
+      key: item._key,
+      id: Number(item.id || 0),
+      nombre: String(item.nombre || ''),
+      tipo: String(item.esCurso ? 'Curso' : (item.tipo || 'Carrera')),
+      modalidad: item.modalidad || null,
+      formularioInscripcion: item.formularioInscripcion || null,
+      inscripcionFechaHasta: item.inscripcionFechaHasta || null,
+      actualizadaEnVentana: item.actualizadaEnVentana === true,
+    }));
+  }
+  out.total = withKeys.total;
+  out.sections = summarizeDiffSections(withKeys);
+  return out;
+}
+
+function filterDiffBySelection(diff, selectedKeys) {
+  const normalized = withDigestKeys(diff);
+  if (!selectedKeys || selectedKeys.size === 0) return normalized;
+  const filtered = {};
+  for (const section of NEWSLETTER_SECTION_ORDER) {
+    filtered[section] = normalized[section].filter((item) => selectedKeys.has(item._key));
+  }
+  filtered.total = NEWSLETTER_SECTION_ORDER.reduce((acc, section) => acc + filtered[section].length, 0);
+  return filtered;
+}
+
+function isDateInWindow(value, windowStartMs, windowEndMs) {
+  if (!value) return false;
+  const ms = new Date(value).getTime();
+  if (!Number.isFinite(ms) || !Number.isFinite(windowStartMs) || !Number.isFinite(windowEndMs)) return false;
+  return ms >= windowStartMs && ms <= windowEndMs;
+}
+
+function ensureFreshWindowCoverage(baseDiff, currentCarreras, windowStart, windowEnd) {
+  const normalized = normalizeDigestDiff(baseDiff);
+  const windowStartMs = windowStart instanceof Date ? windowStart.getTime() : new Date(windowStart).getTime();
+  const windowEndMs = windowEnd instanceof Date ? windowEnd.getTime() : new Date(windowEnd).getTime();
+  const included = new Set();
+  for (const section of NEWSLETTER_SECTION_ORDER) {
+    for (const item of normalized[section]) included.add(Number(item?.id || 0));
+  }
+
+  for (const curr of currentCarreras || []) {
+    const id = Number(curr?.id || 0);
+    if (!id || included.has(id)) continue;
+    const createdInWindow = isDateInWindow(curr?.creadoEn, windowStartMs, windowEndMs);
+    const modifiedInWindow = isDateInWindow(curr?.modificadoEn, windowStartMs, windowEndMs);
+    if (!createdInWindow && !modifiedInWindow) continue;
+    if (createdInWindow) normalized.nueva.push(curr);
+    else normalized.actualizadas.push({ ...curr, actualizadaEnVentana: true });
+    included.add(id);
+  }
+
+  normalized.total = NEWSLETTER_SECTION_ORDER.reduce((acc, section) => acc + normalized[section].length, 0);
+  return normalized;
+}
+
+function buildManualWindowDiff(snapshotCarreras, lastCarreras, windowStart, windowEnd) {
+  const base = buildNewsletterDiff(snapshotCarreras, lastCarreras, windowStart, windowEnd);
+  return ensureFreshWindowCoverage(base, snapshotCarreras, windowStart, windowEnd);
+}
+
+function buildManualNewsletterPreview(now = new Date()) {
+  const cfg = ensureNewsletterState();
+  const windowStart = getWeekStartArgentinaUtc(now);
+  const windowEnd = now;
+  const snapshot = buildNewsletterDigestSnapshot();
+  const lastCarreras = Array.isArray(cfg.lastCarrerasSnapshot) ? cfg.lastCarrerasSnapshot : null;
+  const diff = withDigestKeys(buildManualWindowDiff(snapshot.carreras, lastCarreras, windowStart, windowEnd));
+  const sections = summarizeDiffSections(diff);
+  return {
+    generatedAt: now.toISOString(),
+    windowStart: windowStart.toISOString(),
+    windowEnd: windowEnd.toISOString(),
+    diff,
+    sections,
+    diffSummary: buildDiffSummaryLabel(diff),
+    recipientsTotal: (db.newsletterSubscriptions || []).filter((s) => s && s.activo !== false && isValidEmail(s.email)).length,
+  };
+}
+
+function getManualDigestPreview() {
+  return buildManualNewsletterPreview(new Date());
+}
+
 function appendNewsletterDispatchLog(entry) {
   ensureNewsletterState();
+  const runAt = new Date().toISOString();
   const log = {
     id: nextDispatchId(db.newsletterDispatchLog),
     dispatchType: String(entry.dispatchType || 'automatico'),
     scheduledFor: toUtcIsoDate(entry.scheduledFor) || new Date().toISOString(),
-    runAt: new Date().toISOString(),
+    runAt,
+    windowStart: toUtcIsoDate(entry.windowStart) || null,
+    windowEnd: toUtcIsoDate(entry.windowEnd) || runAt,
     status: String(entry.status || 'unknown'),
     changesDetected: !!entry.changesDetected,
     recipientsTotal: Number(entry.recipientsTotal || 0),
@@ -439,6 +626,10 @@ function appendNewsletterDispatchLog(entry) {
     failCount: Number(entry.failCount || 0),
     diffTotal: Number(entry.diffTotal || 0),
     message: String(entry.message || ''),
+    sections: entry.sections && typeof entry.sections === 'object' ? entry.sections : null,
+    diff: entry.diff && typeof entry.diff === 'object' ? entry.diff : null,
+    recipients: Array.isArray(entry.recipients) ? entry.recipients : [],
+    newsletterHtml: typeof entry.newsletterHtml === 'string' ? entry.newsletterHtml : '',
   };
   db.newsletterDispatchLog.unshift(log);
   if (db.newsletterDispatchLog.length > 200) db.newsletterDispatchLog = db.newsletterDispatchLog.slice(0, 200);
@@ -847,6 +1038,8 @@ async function runWeeklyNewsletterDigestIfNeeded(now = new Date()) {
       appendNewsletterDispatchLog({
         dispatchType: 'automatico',
         scheduledFor,
+        windowStart: scheduledFor,
+        windowEnd: now,
         status: 'sin-cambios',
         changesDetected: false,
         recipientsTotal,
@@ -861,21 +1054,15 @@ async function runWeeklyNewsletterDigestIfNeeded(now = new Date()) {
 
     const windowStart = lastRun || scheduledFor;
     const windowEnd = now;
-    const diff = buildNewsletterDiff(snapshot.carreras, lastCarreras, windowStart, windowEnd);
-
-    const diffSummary = [
-      diff.nueva.length && `${diff.nueva.length} nueva(s)`,
-      diff.inscripcionAbierta.length && `${diff.inscripcionAbierta.length} inscripción abierta`,
-      diff.proximamente.length && `${diff.proximamente.length} próximamente`,
-      diff.cierreProximo.length && `${diff.cierreProximo.length} cierre próximo`,
-      diff.cierreReciente.length && `${diff.cierreReciente.length} cierre reciente`,
-      diff.actualizadas.length && `${diff.actualizadas.length} actualizada(s)`,
-    ].filter(Boolean).join(', ');
+    const diff = normalizeDigestDiff(buildNewsletterDiff(snapshot.carreras, lastCarreras, windowStart, windowEnd));
+    const diffSummary = buildDiffSummaryLabel(diff);
 
     let status = 'pendiente-configuracion';
     let message = `${diff.total} propuesta(s) con cambios (${diffSummary}). Sin SMTP configurado.`;
     let sentCount = 0;
     let failCount = 0;
+    let failedList = [];
+    let sentEmails = [];
 
     const nowIso = now.toISOString();
 
@@ -888,10 +1075,12 @@ async function runWeeklyNewsletterDigestIfNeeded(now = new Date()) {
       const sendResult = await sendNewsletterDigest(emails, diff, siteUrl);
       sentCount = sendResult.sentCount;
       failCount = sendResult.failed ? sendResult.failed.length : Math.max(0, recipientsTotal - sentCount);
+      failedList = Array.isArray(sendResult.failed) ? sendResult.failed : [];
+      sentEmails = Array.isArray(sendResult.sentEmails) ? sendResult.sentEmails : [];
 
       if (sentCount > 0) {
         cfg.lastSentAt = nowIso;
-        const sentSet = new Set(sendResult.sentEmails || []);
+        const sentSet = new Set(sentEmails);
         db.newsletterSubscriptions.forEach((s, i) => {
           if (sentSet.has(String(s.email || '').trim().toLowerCase())) {
             db.newsletterSubscriptions[i] = { ...s, ultimoEnvio: nowIso };
@@ -904,14 +1093,14 @@ async function runWeeklyNewsletterDigestIfNeeded(now = new Date()) {
         message = `Digest enviado a ${sentCount} suscriptor(es). Cambios: ${diffSummary}.`;
       } else if (sentCount > 0) {
         status = 'enviado-parcial';
-        message = `Digest enviado a ${sentCount}/${recipientsTotal} suscriptor(es). ${sendResult.failed?.length || 0} error(es). Cambios: ${diffSummary}.`;
-        if (sendResult.failed?.length) {
-          console.warn('[newsletter] Envíos fallidos:', sendResult.failed.map((f) => `${f.email}: ${f.error}`).join('; '));
+        message = `Digest enviado a ${sentCount}/${recipientsTotal} suscriptor(es). ${failedList.length || 0} error(es). Cambios: ${diffSummary}.`;
+        if (failedList.length) {
+          console.warn('[newsletter] Envíos fallidos:', failedList.map((f) => `${f.email}: ${f.error}`).join('; '));
         }
       } else {
         status = 'error-envio';
         message = `No se pudo enviar a ningún suscriptor. ${sendResult.error || ''}`;
-        console.error('[newsletter] Todos los envíos fallaron:', sendResult.failed);
+        console.error('[newsletter] Todos los envíos fallaron:', failedList);
       }
     }
 
@@ -920,6 +1109,8 @@ async function runWeeklyNewsletterDigestIfNeeded(now = new Date()) {
     cfg.lastCarrerasSnapshot = snapshot.carreras;
     appendNewsletterDispatchLog({
       scheduledFor,
+      windowStart,
+      windowEnd,
       status,
       changesDetected: true,
       recipientsTotal,
@@ -928,6 +1119,20 @@ async function runWeeklyNewsletterDigestIfNeeded(now = new Date()) {
       diffTotal: diff.total,
       dispatchType: 'automatico',
       message,
+      sections: summarizeDiffSections(diff),
+      diff: buildDiffPayloadForLog(diff),
+      newsletterHtml: buildDigestEmailHtml(diff, String(process.env.PUBLIC_URL || '').replace(/\/$/, '')),
+      recipients: recipients.map((recipient) => {
+        const email = String(recipient?.email || '').trim().toLowerCase();
+        const failed = failedList.find((item) => String(item?.email || '').trim().toLowerCase() === email);
+        return {
+          email,
+          sentAt: sentEmails.includes(email) ? nowIso : null,
+          status: sentEmails.includes(email) ? 'enviado' : (failed ? 'fallido' : 'omitido'),
+          error: failed?.error || null,
+          newsCount: diff.total,
+        };
+      }),
     });
     await saveDB();
   } catch (err) {
@@ -943,7 +1148,7 @@ async function runWeeklyNewsletterDigestIfNeeded(now = new Date()) {
  * No requiere cfg.enabled; sí respeta newsletterDigestInFlight.
  * @returns {Promise<{sentCount,failCount,recipientsTotal,diffTotal,sections,status,message}>}
  */
-async function sendManualNewsletterDigest() {
+async function sendManualNewsletterDigest(options = {}) {
   if (!dbReady) throw new Error('El store aún no está listo.');
   if (newsletterDigestInFlight) throw Object.assign(new Error('Ya hay un envío en curso. Intentá en un momento.'), { code: 'IN_FLIGHT' });
 
@@ -956,41 +1161,65 @@ async function sendManualNewsletterDigest() {
 
     const snapshot = buildNewsletterDigestSnapshot();
     const lastCarreras = Array.isArray(cfg.lastCarrerasSnapshot) ? cfg.lastCarrerasSnapshot : null;
-    const recipients = (db.newsletterSubscriptions || []).filter((s) => s && s.activo !== false && isValidEmail(s.email));
+    const activeRecipients = (db.newsletterSubscriptions || []).filter((s) => s && s.activo !== false && isValidEmail(s.email));
+    const selectedEmails = Array.isArray(options?.selectedEmails)
+      ? new Set(options.selectedEmails.map((email) => String(email || '').trim().toLowerCase()).filter(Boolean))
+      : null;
+    const recipients = selectedEmails
+      ? activeRecipients.filter((s) => selectedEmails.has(String(s.email || '').trim().toLowerCase()))
+      : activeRecipients;
+    const targetEmails = recipients
+      .map((recipient) => String(recipient?.email || '').trim().toLowerCase())
+      .filter(Boolean);
     const recipientsTotal = recipients.length;
 
-    const diff = buildNewsletterDiff(snapshot.carreras, lastCarreras, windowStart, windowEnd);
-    const diffSummary = [
-      diff.nueva.length && `${diff.nueva.length} nueva(s)`,
-      diff.inscripcionAbierta.length && `${diff.inscripcionAbierta.length} inscripción abierta`,
-      diff.proximamente.length && `${diff.proximamente.length} próximamente`,
-      diff.cierreProximo.length && `${diff.cierreProximo.length} cierre próximo`,
-      diff.cierreReciente.length && `${diff.cierreReciente.length} cierre reciente`,
-      diff.actualizadas.length && `${diff.actualizadas.length} actualizada(s)`,
-    ].filter(Boolean).join(', ') || 'sin cambios';
+    const baseDiff = normalizeDigestDiff(buildManualWindowDiff(snapshot.carreras, lastCarreras, windowStart, windowEnd));
+    const selectedKeys = Array.isArray(options?.selectedKeys)
+      ? new Set(options.selectedKeys.map((key) => String(key || '').trim()).filter(Boolean))
+      : null;
+    const selectedDiff = normalizeDigestDiff(filterDiffBySelection(baseDiff, selectedKeys));
+    const diffSummary = buildDiffSummaryLabel(selectedDiff) || 'sin cambios';
+    const excludedCount = Math.max(0, Number(baseDiff.total || 0) - Number(selectedDiff.total || 0));
 
     const nowIso = now.toISOString();
     let sentCount = 0;
     let failCount = 0;
+    let sentEmails = [];
+    let failedList = [];
     let status = 'manual-pendiente-configuracion';
-    let message = `Envío manual: ${diff.total} propuesta(s) (${diffSummary}). Sin SMTP configurado.`;
+    let message = `Envío manual: ${selectedDiff.total} propuesta(s) (${diffSummary}). Sin SMTP configurado.`;
+    if (excludedCount > 0) message += ` Excluidas manualmente: ${excludedCount}.`;
 
-    if (diff.total === 0) {
-      status = 'manual-sin-novedades';
-      message = 'Envío manual: sin novedades en la ventana. No se enviaron correos.';
+    if (selectedDiff.total === 0) {
+      return {
+        blocked: true,
+        status: 'manual-sin-novedades',
+        message: 'No hay novedades aún para informar',
+        sentCount: 0,
+        failCount: 0,
+        recipientsTotal,
+        diffTotal: 0,
+        sections: summarizeDiffSections(selectedDiff),
+        selection: { selectedTotal: 0, excludedTotal: excludedCount },
+        windowStart: windowStart.toISOString(),
+        windowEnd: windowEnd.toISOString(),
+      };
     } else if (recipientsTotal === 0) {
       status = 'manual-sin-destinatarios';
-      message = `Envío manual: ${diff.total} propuesta(s) (${diffSummary}). Sin suscriptores activos.`;
+      message = selectedEmails
+        ? `Envío manual: ${selectedDiff.total} propuesta(s) (${diffSummary}). Sin destinatarios válidos en la selección manual.`
+        : `Envío manual: ${selectedDiff.total} propuesta(s) (${diffSummary}). Sin suscriptores activos.`;
     } else if (hasNewsletterMailConfig()) {
       const siteUrl = String(process.env.PUBLIC_URL || '').replace(/\/$/, '');
-      const emails = recipients.map((s) => String(s.email || '').trim().toLowerCase()).filter(Boolean);
-      const sendResult = await sendNewsletterDigest(emails, diff, siteUrl);
+      const sendResult = await sendNewsletterDigest(targetEmails, selectedDiff, siteUrl);
       sentCount = sendResult.sentCount;
       failCount = sendResult.failed ? sendResult.failed.length : 0;
+      sentEmails = Array.isArray(sendResult.sentEmails) ? sendResult.sentEmails : [];
+      failedList = Array.isArray(sendResult.failed) ? sendResult.failed : [];
 
       if (sentCount > 0) {
         cfg.lastSentAt = nowIso;
-        const sentSet = new Set(sendResult.sentEmails || []);
+        const sentSet = new Set(sentEmails);
         db.newsletterSubscriptions.forEach((s, i) => {
           if (sentSet.has(String(s.email || '').trim().toLowerCase())) {
             db.newsletterSubscriptions[i] = { ...s, ultimoEnvio: nowIso };
@@ -1007,8 +1236,8 @@ async function sendManualNewsletterDigest() {
       } else {
         status = 'manual-enviado-parcial';
         message = `Envío manual a ${sentCount}/${recipientsTotal} suscriptor(es) (${failCount} error(es)). Cambios: ${diffSummary}.`;
-        if (sendResult.failed?.length) {
-          console.warn('[newsletter][manual] Envíos fallidos:', sendResult.failed.map((f) => `${f.email}: ${f.error}`).join('; '));
+        if (failedList.length) {
+          console.warn('[newsletter][manual] Envíos fallidos:', failedList.map((f) => `${f.email}: ${f.error}`).join('; '));
         }
       }
     }
@@ -1018,14 +1247,29 @@ async function sendManualNewsletterDigest() {
     cfg.lastCarrerasSnapshot = snapshot.carreras;
     appendNewsletterDispatchLog({
       scheduledFor: now,
+      windowStart,
+      windowEnd,
       status,
-      changesDetected: diff.total > 0,
+      changesDetected: selectedDiff.total > 0,
       recipientsTotal,
       sentCount,
       failCount,
-      diffTotal: diff.total,
+      diffTotal: selectedDiff.total,
       dispatchType: 'manual',
       message,
+      sections: summarizeDiffSections(selectedDiff),
+      diff: buildDiffPayloadForLog(selectedDiff),
+      newsletterHtml: buildDigestEmailHtml(selectedDiff, String(process.env.PUBLIC_URL || '').replace(/\/$/, '')),
+      recipients: targetEmails.map((email) => {
+        const failed = failedList.find((item) => String(item?.email || '').trim().toLowerCase() === email);
+        return {
+          email,
+          sentAt: sentEmails.includes(email) ? nowIso : null,
+          status: sentEmails.includes(email) ? 'enviado' : (failed ? 'fallido' : 'omitido'),
+          error: failed?.error || null,
+          newsCount: selectedDiff.total,
+        };
+      }),
     });
     await saveDB();
 
@@ -1033,14 +1277,11 @@ async function sendManualNewsletterDigest() {
       sentCount,
       failCount,
       recipientsTotal,
-      diffTotal: diff.total,
-      sections: {
-        nueva: diff.nueva.length,
-        inscripcionAbierta: diff.inscripcionAbierta.length,
-        proximamente: diff.proximamente.length,
-        cierreProximo: diff.cierreProximo.length,
-        cierreReciente: diff.cierreReciente.length,
-        actualizadas: diff.actualizadas.length,
+      diffTotal: selectedDiff.total,
+      sections: summarizeDiffSections(selectedDiff),
+      selection: {
+        selectedTotal: selectedDiff.total,
+        excludedTotal: excludedCount,
       },
       status,
       message,

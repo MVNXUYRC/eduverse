@@ -140,18 +140,30 @@ CREATE TABLE IF NOT EXISTS newsletter_dispatch_logs (
   dispatch_type TEXT NOT NULL DEFAULT 'automatico',
   scheduled_for TIMESTAMPTZ NOT NULL,
   run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  window_start TIMESTAMPTZ NULL,
+  window_end TIMESTAMPTZ NULL,
   status TEXT NOT NULL,
   changes_detected BOOLEAN NOT NULL DEFAULT FALSE,
   recipients_total INTEGER NOT NULL DEFAULT 0,
   sent_count INTEGER NOT NULL DEFAULT 0,
   fail_count INTEGER NOT NULL DEFAULT 0,
   diff_total INTEGER NOT NULL DEFAULT 0,
-  message TEXT DEFAULT ''
+  message TEXT DEFAULT '',
+  sections JSONB NOT NULL DEFAULT '{}'::jsonb,
+  diff JSONB NOT NULL DEFAULT '{}'::jsonb,
+  recipients JSONB NOT NULL DEFAULT '[]'::jsonb,
+  newsletter_html TEXT DEFAULT ''
 );
 
 ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS dispatch_type TEXT NOT NULL DEFAULT 'automatico';
 ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS fail_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS diff_total INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS window_start TIMESTAMPTZ NULL;
+ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS window_end TIMESTAMPTZ NULL;
+ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS sections JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS diff JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS recipients JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE newsletter_dispatch_logs ADD COLUMN IF NOT EXISTS newsletter_html TEXT DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS lookup_values (
   category TEXT NOT NULL,

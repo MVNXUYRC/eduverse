@@ -38,11 +38,12 @@ const CHUNK_UPLOAD_DIR = path.join(process.env.TMPDIR || '/tmp', 'ead-upload-chu
 const MAX_CHUNK_MB = Number.parseInt(String(process.env.ADMIN_MAX_CHUNK_MB || ''), 10);
 const MAX_CHUNK_BYTES = (Number.isFinite(MAX_CHUNK_MB) && MAX_CHUNK_MB > 0 ? MAX_CHUNK_MB : 6) * 1024 * 1024;
 
-let _db, _save, _sendManualDigest;
+let _db, _save, _sendManualDigest, _getManualDigestPreview;
 function init(db, save, helpers) {
   _db = db;
   if (typeof save === 'function') _save = save;
   if (helpers && typeof helpers.sendManualDigest === 'function') _sendManualDigest = helpers.sendManualDigest;
+  if (helpers && typeof helpers.getManualDigestPreview === 'function') _getManualDigestPreview = helpers.getManualDigestPreview;
 }
 // Called after server reloads db, without replacing save function
 function updateDb(db) { _db = db; }
@@ -1357,7 +1358,37 @@ function inferDispatchType(logRow) {
   return 'automatico';
 }
 
-function mapDispatchLogRow(logRow) {
+function normalizeDispatchRecipients(logRow, recipientsTotal, fallbackRunAt = null) {
+  const raw = Array.isArray(logRow?.recipients) ? logRow.recipients : [];
+  const out = [];
+  const seen = new Set();
+
+  for (const item of raw) {
+    const email = normalizeNewsletterEmail(
+      typeof item === 'string'
+        ? item
+        : (item?.email || item?.to || item?.recipient || '')
+    );
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    out.push({
+      email,
+      sentAt: item?.sentAt || null,
+      status: String(item?.status || 'omitido'),
+      error: item?.error || null,
+      newsCount: Number(item?.newsCount || 0),
+    });
+  }
+
+  // Compatibilidad logs legacy: si faltan recipients detallados, no inventamos correos.
+  // Devolvemos vacío y frontend mantiene fallback visual sin romper registros previos.
+  if (!out.length && Number(recipientsTotal || 0) > 0) {
+    return [];
+  }
+  return out;
+}
+
+function mapDispatchLogRow(logRow, includeDetail = false) {
   const recipientsTotal = Number(logRow?.recipientsTotal || 0);
   const sentCount = Number(logRow?.sentCount || 0);
   const hasExplicitFail = logRow?.failCount !== undefined && logRow?.failCount !== null;
@@ -1366,11 +1397,13 @@ function mapDispatchLogRow(logRow) {
     ? (Number.isFinite(failRaw) && failRaw >= 0 ? failRaw : 0)
     : Math.max(0, recipientsTotal - sentCount);
   const diffTotal = Number(logRow?.diffTotal || 0);
-  return {
+  const mapped = {
     id: Number(logRow?.id || 0),
     dispatchType: inferDispatchType(logRow),
     scheduledFor: logRow?.scheduledFor || null,
     runAt: logRow?.runAt || null,
+    windowStart: logRow?.windowStart || null,
+    windowEnd: logRow?.windowEnd || null,
     status: String(logRow?.status || 'unknown'),
     changesDetected: logRow?.changesDetected === true,
     recipientsTotal,
@@ -1379,6 +1412,35 @@ function mapDispatchLogRow(logRow) {
     diffTotal,
     message: String(logRow?.message || ''),
   };
+  if (includeDetail) {
+    mapped.sections = logRow?.sections && typeof logRow.sections === 'object' ? logRow.sections : null;
+    mapped.diff = logRow?.diff && typeof logRow.diff === 'object' ? logRow.diff : null;
+    mapped.recipients = normalizeDispatchRecipients(logRow, recipientsTotal, mapped.runAt || null);
+    mapped.newsletterHtml = typeof logRow?.newsletterHtml === 'string' ? logRow.newsletterHtml : '';
+  }
+  return mapped;
+}
+
+function parseIsoDateStart(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const date = new Date(`${raw}T00:00:00.000Z`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseIsoDateEnd(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const date = new Date(`${raw}T23:59:59.999Z`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function parseManualEmailsInput(value) {
@@ -1583,23 +1645,60 @@ async function handleNewsletterImport(req) {
   };
 }
 
-function handleNewsletterExport(req) {
+function filterNewsletterSubscriptions(params) {
+  const q = String(params?.get('q') || '').trim().toLowerCase();
+  const status = String(params?.get('status') || '').trim().toLowerCase();
+  const source = sanitizeText(params?.get('source') || '', 60).toLowerCase();
+  const lastSentDate = String(params?.get('lastSentDate') || '').trim();
+  const lastSentFrom = String(params?.get('lastSentFrom') || '').trim();
+  const lastSentTo = String(params?.get('lastSentTo') || '').trim();
+  const fromDate = parseIsoDateStart(lastSentFrom || lastSentDate);
+  const toDate = parseIsoDateEnd(lastSentTo || lastSentDate);
+
+  let rows = (db().newsletterSubscriptions || []).map((row) => ({
+    id: Number(row.id || 0),
+    email: String(row.email || '').trim().toLowerCase(),
+    source: sanitizeText(row.source || 'sitio', 60) || 'sitio',
+    activo: row.activo !== false,
+    fechaAlta: row.fechaAlta || row.actualizadoEn || null,
+    actualizadoEn: row.actualizadoEn || row.fechaAlta || null,
+    ultimoEnvio: row.ultimoEnvio || null,
+  }));
+
+  if (q) rows = rows.filter((row) => row.email.includes(q));
+  if (status === 'active') rows = rows.filter((row) => row.activo);
+  if (status === 'inactive') rows = rows.filter((row) => !row.activo);
+  if (source) rows = rows.filter((row) => String(row.source || '').toLowerCase() === source);
+  if (fromDate || toDate) {
+    rows = rows.filter((row) => {
+      if (!row.ultimoEnvio) return false;
+      const ts = new Date(row.ultimoEnvio);
+      if (Number.isNaN(ts.getTime())) return false;
+      if (fromDate && ts < fromDate) return false;
+      if (toDate && ts > toDate) return false;
+      return true;
+    });
+  }
+  rows.sort((a, b) => new Date(b.fechaAlta || 0) - new Date(a.fechaAlta || 0));
+  return rows;
+}
+
+function handleNewsletterExport(req, params) {
   const auth = requireRole(req, ROLES.ROOT);
   if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
   if (auth.user.rol !== ROLES.ROOT) return { status: 403, data: { error: 'Solo root puede realizar esta acción' } };
 
   ensureNewsletterState();
-  const rows = (db().newsletterSubscriptions || [])
+  const rows = filterNewsletterSubscriptions(params)
     .map((row) => ({
-      correo: normalizeNewsletterEmail(row?.email),
+      correo: normalizeNewsletterEmail(row.email),
       origen: sanitizeText(row?.source || 'sitio', 60) || 'sitio',
       estado: row?.activo !== false ? 'Activo' : 'Inactivo',
       activo: row?.activo !== false ? 'Sí' : 'No',
       fechaAlta: row?.fechaAlta || row?.actualizadoEn || '',
       ultimoEnvio: row?.ultimoEnvio || '',
     }))
-    .filter((row) => row.correo)
-    .sort((a, b) => new Date(b.fechaAlta || 0) - new Date(a.fechaAlta || 0));
+    .filter((row) => row.correo);
 
   const ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = [
@@ -1630,7 +1729,7 @@ function handleGetNewsletterDispatchLogs(req) {
   const auth = requireRole(req, ROLES.ROOT);
   if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
   ensureNewsletterState();
-  const rows = (db().newsletterDispatchLog || []).map(mapDispatchLogRow)
+  const rows = (db().newsletterDispatchLog || []).map((row) => mapDispatchLogRow(row, false))
     .sort((a, b) => new Date(b.runAt || 0) - new Date(a.runAt || 0));
   return {
     status: 200,
@@ -1640,6 +1739,29 @@ function handleGetNewsletterDispatchLogs(req) {
         total: rows.length,
         manuales: rows.filter((row) => row.dispatchType === 'manual').length,
         automaticos: rows.filter((row) => row.dispatchType === 'automatico').length,
+      },
+    },
+  };
+}
+
+function handleGetNewsletterDispatchDetail(req, id) {
+  const auth = requireRole(req, ROLES.ROOT);
+  if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
+  ensureNewsletterState();
+  const targetId = Number.parseInt(String(id || ''), 10);
+  if (!Number.isFinite(targetId)) return { status: 400, data: { error: 'ID inválido.' } };
+  const row = (db().newsletterDispatchLog || []).find((item) => Number(item?.id) === targetId);
+  if (!row) return { status: 404, data: { error: 'Envío no encontrado.' } };
+  const mapped = mapDispatchLogRow(row, true);
+  return {
+    status: 200,
+    data: {
+      data: mapped,
+      detail: {
+        newsletterHtml: mapped.newsletterHtml || '',
+        diff: mapped.diff || null,
+        recipients: Array.isArray(mapped.recipients) ? mapped.recipients : [],
+        sections: mapped.sections || null,
       },
     },
   };
@@ -1667,28 +1789,26 @@ function nextWeeklyRunUtc(baseDate, digestCfg) {
   return scheduled.toISOString();
 }
 
+function latestDispatchByType(type) {
+  const rows = (db().newsletterDispatchLog || [])
+    .map((row) => mapDispatchLogRow(row, false))
+    .filter((row) => row.dispatchType === type && row.sentCount > 0 && row.runAt);
+  if (!rows.length) return null;
+  rows.sort((a, b) => new Date(b.runAt || 0) - new Date(a.runAt || 0));
+  return rows[0];
+}
+
 function handleGetNewsletterSubscriptions(req, params) {
   const auth = requireRole(req, ROLES.ROOT);
   if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
 
   const digestCfg = ensureNewsletterState();
-  const q = String(params.get('q') || '').trim().toLowerCase();
-  const status = String(params.get('status') || '').trim().toLowerCase();
-
-  let rows = (db().newsletterSubscriptions || []).map((row) => ({
-    id: Number(row.id || 0),
-    email: String(row.email || '').trim().toLowerCase(),
-    source: sanitizeText(row.source || 'sitio', 60) || 'sitio',
-    activo: row.activo !== false,
-    fechaAlta: row.fechaAlta || row.actualizadoEn || null,
-    actualizadoEn: row.actualizadoEn || row.fechaAlta || null,
-    ultimoEnvio: row.ultimoEnvio || null,
-  }));
-
-  if (q) rows = rows.filter((row) => row.email.includes(q) || String(row.source || '').toLowerCase().includes(q));
-  if (status === 'active') rows = rows.filter((row) => row.activo);
-  if (status === 'inactive') rows = rows.filter((row) => !row.activo);
-  rows.sort((a, b) => new Date(b.fechaAlta || 0) - new Date(a.fechaAlta || 0));
+  const rows = filterNewsletterSubscriptions(params);
+  const allRows = filterNewsletterSubscriptions(new URLSearchParams());
+  const sourceOptions = [...new Set(allRows.map((r) => String(r.source || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const lastManual = latestDispatchByType('manual');
+  const lastWeekly = latestDispatchByType('automatico');
+  const lastManualSentAt = lastManual?.runAt || null;
 
   return {
     status: 200,
@@ -1701,7 +1821,19 @@ function handleGetNewsletterSubscriptions(req, params) {
         nextRunAt: nextWeeklyRunUtc(new Date(), digestCfg),
         lastRunAt: digestCfg.lastRunAt || null,
         lastSentAt: digestCfg.lastSentAt || null,
+        lastManualSentAt,
+        lastWeeklyDispatch: lastWeekly ? {
+          runAt: lastWeekly.runAt || null,
+          windowStart: lastWeekly.windowStart || null,
+          windowEnd: lastWeekly.windowEnd || null,
+        } : null,
+        lastManualDispatch: lastManual ? {
+          runAt: lastManual.runAt || null,
+          windowStart: lastManual.windowStart || null,
+          windowEnd: lastManual.windowEnd || null,
+        } : null,
       },
+      sourceOptions,
       digest: {
         enabled: digestCfg.enabled,
         weekdayUtc: digestCfg.weekdayUtc,
@@ -1754,15 +1886,47 @@ async function handleDeleteNewsletterSubscription(req, id) {
   return { status: 200, data: { success: true, id: itemId } };
 }
 
-async function handleManualNewsletterSend(req) {
+function handleManualNewsletterPreview(req) {
+  const auth = requireRole(req, ROLES.ROOT);
+  if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
+  if (auth.user.rol !== ROLES.ROOT) return { status: 403, data: { error: 'Solo root puede realizar esta acción' } };
+  if (typeof _getManualDigestPreview !== 'function') {
+    return { status: 503, data: { error: 'La vista previa manual no está disponible. Reiniciá el servidor.' } };
+  }
+  try {
+    const preview = _getManualDigestPreview();
+    return { status: 200, data: { success: true, preview } };
+  } catch (err) {
+    return { status: 500, data: { error: err.message || 'No se pudo generar la vista previa.' } };
+  }
+}
+
+async function handleManualNewsletterSend(req, body = {}) {
   const auth = requireRole(req, ROLES.ROOT);
   if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
   if (auth.user.rol !== ROLES.ROOT) return { status: 403, data: { error: 'Solo root puede realizar esta acción' } };
   if (typeof _sendManualDigest !== 'function') {
     return { status: 503, data: { error: 'El módulo de envío no está disponible. Reiniciá el servidor.' } };
   }
+  const selectedKeys = Array.isArray(body?.selectedKeys)
+    ? body.selectedKeys.map((key) => String(key || '').trim()).filter(Boolean)
+    : [];
+  const selectedEmails = Array.isArray(body?.selectedEmails)
+    ? body.selectedEmails.map((email) => String(email || '').trim().toLowerCase()).filter(Boolean)
+    : null;
   try {
-    const result = await _sendManualDigest();
+    const result = await _sendManualDigest({ selectedKeys, selectedEmails });
+    if (result?.blocked === true) {
+      return {
+        status: 409,
+        data: {
+          error: result?.message || 'No hay novedades para enviar.',
+          status: result?.status || 'manual-sin-novedades',
+          selection: result?.selection || { selectedTotal: 0, excludedTotal: 0 },
+          diff: { total: Number(result?.diffTotal || 0) },
+        },
+      };
+    }
     const sentCount = Number(result?.sentCount || 0);
     const failCount = Number(result?.failCount || 0);
     const recipientsTotal = Number(result?.recipientsTotal || 0);
@@ -1785,6 +1949,7 @@ async function handleManualNewsletterSend(req) {
         message: result?.message || '',
         windowStart: result?.windowStart || null,
         windowEnd: result?.windowEnd || null,
+        selection: result?.selection || { selectedTotal: diffTotal, excludedTotal: 0 },
       },
     };
   } catch (err) {
@@ -1799,6 +1964,12 @@ async function handleAdminAPI(req, res, pathname, params, jsonResponse, readBody
   const base=pathname.replace('/admin/api','');
   const segs=base.split('/').filter(Boolean);
   const r0=segs[0], id=segs[1], m=req.method;
+
+  // Ruta canónica explícita para evitar desalineaciones de parsing/path en runtime.
+  if (m === 'GET' && /^\/admin\/api\/newsletter\/preview-manual\/?$/.test(String(pathname || ''))) {
+    const r = handleManualNewsletterPreview(req);
+    return jsonResponse(res, r.data, r.status);
+  }
 
   if (r0==='auth') {
     if (segs[1]==='login'&&m==='POST')           {const b=await readBody(req);const r=await handleLogin(req,b);return jsonResponse(res,r.data,r.status);}
@@ -1866,8 +2037,27 @@ async function handleAdminAPI(req, res, pathname, params, jsonResponse, readBody
     }
   }
   if (r0==='newsletter') {
+    const isPreviewManualRoute = m === 'GET' && (
+      (segs[1] === 'preview-manual' && !segs[2])
+      || (segs[1] === 'preview' && !segs[2]) // alias legacy
+      || (segs[1] === 'manual-preview' && !segs[2]) // alias legacy
+      || (segs[1] === 'preview' && segs[2] === 'manual' && !segs[3]) // alias legacy
+    );
+    if (isPreviewManualRoute) {
+      const r = handleManualNewsletterPreview(req);
+      return jsonResponse(res, r.data, r.status);
+    }
     if (segs[1]==='logs' && !segs[2] && m==='GET') {
+      const queryId = Number.parseInt(String(params.get('id') || ''), 10);
+      if (Number.isFinite(queryId)) {
+        const r = handleGetNewsletterDispatchDetail(req, queryId);
+        return jsonResponse(res, r.data, r.status);
+      }
       const r = handleGetNewsletterDispatchLogs(req);
+      return jsonResponse(res, r.data, r.status);
+    }
+    if (segs[1]==='logs' && segs[2] && m==='GET') {
+      const r = handleGetNewsletterDispatchDetail(req, segs[2]);
       return jsonResponse(res, r.data, r.status);
     }
     if (segs[1]==='subscriptions' && !segs[2] && m==='GET') {
@@ -1884,7 +2074,7 @@ async function handleAdminAPI(req, res, pathname, params, jsonResponse, readBody
       return jsonResponse(res, r.data, r.status);
     }
     if (segs[1]==='subscriptions' && segs[2]==='export' && m==='GET') {
-      const r = handleNewsletterExport(req);
+      const r = handleNewsletterExport(req, params);
       return jsonResponse(res, r.data, r.status);
     }
     if (segs[1]==='subscriptions' && segs[2] && m==='PATCH') {
@@ -1897,7 +2087,8 @@ async function handleAdminAPI(req, res, pathname, params, jsonResponse, readBody
       return jsonResponse(res, r.data, r.status);
     }
     if (segs[1]==='send' && !segs[2] && m==='POST') {
-      const r = await handleManualNewsletterSend(req);
+      const b = await readBody(req).catch(() => ({}));
+      const r = await handleManualNewsletterSend(req, b);
       return jsonResponse(res, r.data, r.status);
     }
   }

@@ -275,4 +275,10 @@ async function sendNewsletterDigest(recipients, diff, siteUrl) {
   return { sentCount, sentEmails, failed };
 }
 
-module.exports = { sendInterestedNotification, hasMailConfig, sendNewsletterDigest, hasNewsletterMailConfig };
+module.exports = {
+  sendInterestedNotification,
+  hasMailConfig,
+  sendNewsletterDigest,
+  hasNewsletterMailConfig,
+  buildDigestEmailHtml,
+};
