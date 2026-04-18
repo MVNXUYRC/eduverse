@@ -9,13 +9,14 @@
       sitio: 'Sitio',
     };
     const SECTION_TITLES = {
-      nueva: 'Nuevas propuestas',
+      nueva: 'NUEVAS PROPUESTAS',
       proximamente: 'Próximamente disponibles',
       inscripcionAbierta: 'Inscripciones abiertas',
       cierreProximo: 'Inscripciones con cierre próximo',
       cierreReciente: 'Inscripciones cerradas recientemente',
-      actualizadas: 'Propuestas actualizadas',
+      actualizadas: 'PROPUESTAS ACTUALIZADAS',
     };
+    const DARK_TH_BASE_STYLE = 'font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em';
 
     let cache = {
       data: [],
@@ -141,6 +142,47 @@
       });
     }
 
+    function fmtWeekdayName(value) {
+      if (!value) return '—';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '—';
+      const weekday = date.toLocaleDateString('es-AR', { weekday: 'long' });
+      return weekday ? weekday.charAt(0).toUpperCase() + weekday.slice(1) : '—';
+    }
+
+    function newsletterItemDayLabel(item) {
+      return fmtWeekdayName(item?.modificadoEn || item?.creadoEn || item?.inscripcionFechaHasta || null);
+    }
+
+    function newsletterItemUnitLabel(item) {
+      const fromArray = Array.isArray(item?.unidadesAcademicas)
+        ? item.unidadesAcademicas.map((v) => String(v || '').trim()).filter(Boolean)
+        : [];
+      const joined = fromArray.join(', ');
+      const single = String(item?.unidadAcademica || '').trim();
+      return joined || single || '—';
+    }
+
+    function previewCell(value, {
+      align = 'center',
+      leftPadding = 0,
+      padLeft = null,
+      padRight = null,
+    } = {}) {
+      const raw = String(value ?? '').trim();
+      const display = raw || '—';
+      const isDash = display === '—';
+      const textAlign = isDash ? 'center' : align;
+      const leftPadStyle = Number.isFinite(padLeft) ? `;padding-left:${padLeft}px` : '';
+      const rightPadStyle = Number.isFinite(padRight) ? `;padding-right:${padRight}px` : '';
+      const textPadStyle = (!isDash && align === 'left' && leftPadding > 0) ? `;padding-left:${leftPadding}px` : '';
+      return `<td style="text-align:${textAlign}${leftPadStyle}${rightPadStyle}${textPadStyle}">${esc(display)}</td>`;
+    }
+
+    function renderDarkTh(content, align = 'center') {
+      return `<th style="${DARK_TH_BASE_STYLE};text-align:${align}">${content}</th>`;
+    }
+
     function fmtDayMonthShort(value) {
       if (!value) return '—';
       const date = new Date(value);
@@ -255,16 +297,59 @@
 
     function renderSummaryCards(summary, logsSummary) {
       return `<div class="stats" style="margin-bottom:14px">
-        <div class="sc"><div class="sv">${Number(summary.total || 0)}</div><div class="sl">Suscriptores</div></div>
-        <div class="sc"><div class="sv">${Number(summary.active || 0)}</div><div class="sl">Activos</div></div>
-        <div class="sc"><div class="sv">${Number(summary.inactive || 0)}</div><div class="sl">Inactivos</div></div>
-        <div class="sc"><div class="sv">${Number(logsSummary.total || (cache.dispatchLog || []).length || 0)}</div><div class="sl">Envíos registrados</div></div>
+        <div class="sc">
+          <div class="sv">${Number(summary.total || 0)}</div>
+          <div class="sl">Suscriptores</div>
+          <div style="font-size:.74rem;color:var(--tx2);margin-top:6px">Base total de contactos.</div>
+        </div>
+        <div class="sc">
+          <div class="sv">${Number(summary.active || 0)}</div>
+          <div class="sl">Activos</div>
+          <div style="font-size:.74rem;color:var(--tx2);margin-top:6px">Reciben envíos automáticos y manuales.</div>
+        </div>
+        <div class="sc">
+          <div class="sv">${Number(summary.inactive || 0)}</div>
+          <div class="sl">Inactivos</div>
+          <div style="font-size:.74rem;color:var(--tx2);margin-top:6px">Excluidos de envíos.</div>
+        </div>
+        <div class="sc">
+          <div class="sv">${Number(logsSummary.total || (cache.dispatchLog || []).length || 0)}</div>
+          <div class="sl">Envíos registrados</div>
+          <div style="font-size:.74rem;color:var(--tx2);margin-top:6px">Historial consolidado de ejecución.</div>
+        </div>
       </div>`;
     }
 
     function previewSelectedCount() {
       if (!cache.preview?.diff) return 0;
       return [...previewSelection].length;
+    }
+
+    function getManualSendContext() {
+      const total = Number(cache.preview?.diff?.total || 0);
+      const selected = previewSelectedCount();
+      const excluded = Math.max(0, total - selected);
+      const isCustomMode = recipientMode === 'custom';
+      const selectedRecipients = recipientSelectionCount();
+      const allActiveRecipients = Number(cache.summary?.active || 0);
+      const canSendByContent = selected > 0;
+      const canSendByRecipients = !isCustomMode || selectedRecipients > 0;
+      const canSend = canSendByContent && canSendByRecipients;
+      const blockedReason = !canSendByContent
+        ? 'Seleccioná al menos una novedad para habilitar el envío manual.'
+        : (!canSendByRecipients
+          ? 'Seleccioná al menos un correo en “Seleccionar correos”.'
+          : '');
+      return {
+        total,
+        selected,
+        excluded,
+        isCustomMode,
+        selectedRecipients,
+        allActiveRecipients,
+        canSend,
+        blockedReason,
+      };
     }
 
     function normalizeEmail(value) {
@@ -320,46 +405,87 @@
       return recipientOptions.filter((email) => normalizeEmail(email).includes(q));
     }
 
+    function bindOverviewInteractiveEvents() {
+      const searchInput = document.getElementById('nwl-recipient-search');
+      if (searchInput && searchInput.dataset.bound !== '1') {
+        searchInput.dataset.bound = '1';
+        searchInput.addEventListener('input', (e) => {
+          recipientSearch = e.target.value || '';
+          const start = Number.isFinite(e.target.selectionStart) ? e.target.selectionStart : null;
+          const end = Number.isFinite(e.target.selectionEnd) ? e.target.selectionEnd : null;
+          rerenderPreviewPanel({ focusRecipientSearch: true, selectionStart: start, selectionEnd: end });
+        });
+      }
+    }
+
+    function setSendProgressState({
+      visible = false, pct = 0, label = '', color = 'var(--cy)', result = '', resultTone = 'var(--tx2)',
+    } = {}) {
+      const wrap = document.getElementById('nwl-send-progress');
+      if (!wrap) return;
+      wrap.style.display = visible ? 'block' : 'none';
+
+      const bar = document.getElementById('nwl-sp-bar');
+      const lbl = document.getElementById('nwl-sp-lbl');
+      const pctEl = document.getElementById('nwl-sp-pct');
+      const resultEl = document.getElementById('nwl-sp-result');
+
+      if (bar) {
+        bar.style.width = `${Math.max(0, Math.min(100, Number(pct || 0)))}%`;
+        bar.style.background = color;
+      }
+      if (lbl) lbl.textContent = label || '';
+      if (pctEl) pctEl.textContent = `${Math.max(0, Math.min(100, Number(pct || 0)))}%`;
+      if (resultEl) {
+        resultEl.textContent = result || '';
+        resultEl.style.color = resultTone;
+      }
+    }
+
     function renderRecipientPicker() {
       const modeAll = recipientMode === 'all';
       const selectedTotal = recipientSelectionCount();
       const filtered = filteredRecipientOptions();
-      return `<div class="tw" style="padding:12px;margin-bottom:12px;border:1px solid var(--bd)">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-          <div style="font-size:.88rem;font-weight:700;color:var(--tx)">Destinatarios del envío manual</div>
-          <div class="tr2">
-            <button class="btn btn-ol btn-sm ${modeAll ? 'active' : ''}" onclick="setNewsletterRecipientMode('all')">Enviar a todos</button>
-            <button class="btn btn-ol btn-sm ${!modeAll ? 'active' : ''}" onclick="setNewsletterRecipientMode('custom')">Seleccionar correos</button>
-          </div>
+      return `<div class="tw" style="padding:12px;border:1px solid var(--bd);margin-bottom:12px">
+        <div style="font-size:.9rem;font-weight:700;color:var(--tx);margin-bottom:10px">Destinatarios</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:.86rem;color:var(--tx);cursor:pointer">
+            <input type="radio" name="nwl-recipient-mode" ${modeAll ? 'checked' : ''} onchange="setNewsletterRecipientMode('all')" style="accent-color:var(--cy)" />
+            Enviar a todos
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:.86rem;color:var(--tx);cursor:pointer">
+            <input type="radio" name="nwl-recipient-mode" ${!modeAll ? 'checked' : ''} onchange="setNewsletterRecipientMode('custom')" style="accent-color:var(--cy)" />
+            Seleccionar correos
+          </label>
         </div>
         ${modeAll
-          ? `<div class="alr alr-info" style="margin-bottom:0">Se enviará a todos los suscriptores activos.</div>`
+          ? `<div class="alr alr-info" style="margin-bottom:0;padding:10px 12px">Se enviará a todos los suscriptores activos.</div>`
           : `<div>
               <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-                <div class="sb2" style="min-width:220px;max-width:360px">🔍 <input type="text" id="nwl-recipient-search" placeholder="Buscar correo suscripto..." value="${esc(recipientSearch || '')}" /></div>
+                <div class="sb2" style="min-width:220px;max-width:360px">🔍 <input type="text" id="nwl-recipient-search" placeholder="Buscar correo..." value="${esc(recipientSearch || '')}" /></div>
                 <div class="tr2">
-                  <button class="btn btn-ol btn-sm" onclick="newsletterRecipientsSelectFiltered()">Seleccionar visibles</button>
-                  <button class="btn btn-ol btn-sm" onclick="newsletterRecipientsClear()">Quitar selección</button>
+                  <button class="btn btn-ol btn-sm" style="min-width:138px;justify-content:center" onclick="newsletterRecipientsSelectFiltered()">Seleccionar visibles</button>
+                  <button class="btn btn-ol btn-sm" style="min-width:130px;justify-content:center" onclick="newsletterRecipientsClear()">Limpiar selección</button>
                 </div>
               </div>
-              <div class="alr ${selectedTotal > 0 ? 'alr-info' : 'alr-warn'}" style="margin-bottom:8px">Seleccionados: <strong>${selectedTotal}</strong></div>
+              <div style="font-size:.82rem;color:var(--tx2);margin-bottom:8px">Correos seleccionados: <strong>${selectedTotal}</strong></div>
               <div class="tw" style="max-height:180px;overflow:auto;border-radius:10px">
                 ${filtered.length
                   ? `<table style="width:100%;table-layout:fixed">
                       <colgroup><col style="width:14%"><col style="width:86%"></colgroup>
-                      <thead><tr><th style="text-align:center">USAR</th><th>CORREO</th></tr></thead>
+                      <thead><tr>${renderDarkTh('USAR')}${renderDarkTh('CORREO')}</tr></thead>
                       <tbody>
                         ${filtered.map((email) => {
                           const key = normalizeEmail(email);
                           const checked = recipientSelection.has(key);
-                          return `<tr>
+                          return `<tr class="${checked ? '' : 'row-finalizada'}">
                             <td style="text-align:center"><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleNewsletterRecipient('${esc(key)}', this.checked)" style="accent-color:var(--cy);width:15px;height:15px"></td>
-                            <td>${esc(email)}</td>
+                            <td style="text-align:left;padding-left:16px">${esc(email)}</td>
                           </tr>`;
                         }).join('')}
                       </tbody>
                     </table>`
-                  : '<div class="empty" style="padding:16px 0"><p>Sin correos para ese filtro.</p></div>'}
+                  : '<div class="empty" style="padding:16px 0"><p>Sin resultados para la búsqueda actual.</p></div>'}
               </div>
             </div>`}
       </div>`;
@@ -368,45 +494,55 @@
     function renderPreviewPanel(me) {
       const preview = cache.preview;
       if (!preview || !preview.diff) {
-        return `<div class="tw" style="padding:14px;margin-bottom:14px"><div class="empty" style="padding:18px 0"><div class="ei">📰</div><p>No hay novedades aún para informar</p></div></div>`;
+        return `<div class="tw" style="padding:14px;margin-bottom:14px">
+          <div style="font-size:.95rem;font-weight:700;color:var(--tx);margin-bottom:8px">Novedades detectadas</div>
+          <div class="empty" style="padding:18px 0">
+            <div class="ei">📰</div>
+            <p>No hay novedades para enviar en este momento.</p>
+          </div>
+        </div>`;
       }
       ensurePreviewSelection();
-      const total = Number(preview.diff.total || 0);
-      const selected = previewSelectedCount();
-      const excluded = Math.max(0, total - selected);
+      const ctx = getManualSendContext();
+      const {
+        total, selected, excluded, canSend,
+      } = ctx;
       const rowsBySection = Object.keys(SECTION_TITLES).map((section) => {
         const items = Array.isArray(preview.diff[section]) ? preview.diff[section] : [];
         if (!items.length) return '';
-        return `<div class="tw" style="padding:10px 10px 12px;margin-bottom:12px;border:1px solid var(--bd);background:linear-gradient(180deg,#fff,#f9fbfd)">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
-            <div style="font-size:.84rem;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.04em">${SECTION_TITLES[section]}</div>
-            <span class="bx bcy">${items.length} ítem(s)</span>
+        return `<div class="tw" style="padding:8px 10px 10px;margin-bottom:10px;border:1px solid var(--bd);background:#fff">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">
+            <div style="font-size:.84rem;font-weight:700;color:var(--tx)">${SECTION_TITLES[section]}</div>
+            <span style="margin-left:auto;display:block;text-align:right;font-size:.8rem;color:var(--tx2)">${items.length} ${items.length === 1 ? 'item' : 'items'}</span>
           </div>
           <div class="tw" style="border-radius:10px;overflow:hidden;border:1px solid var(--bd)">
             <table style="width:100%;table-layout:fixed">
               <colgroup>
                 <col style="width:6%">
-                <col style="width:46%">
-                <col style="width:18%">
+                <col style="width:14%">
                 <col style="width:15%">
-                <col style="width:15%">
+                <col style="width:23%">
+                <col style="width:42%">
               </colgroup>
               <thead><tr>
-                <th style="text-align:center">ENVIAR</th>
-                <th>PROPUESTA</th>
-                <th>TIPO</th>
-                <th>MODALIDAD</th>
-                <th>CIERRE</th>
+                ${renderDarkTh('ENVIAR')}
+                ${renderDarkTh('CREADA')}
+                ${renderDarkTh('TIPO')}
+                ${renderDarkTh('UNIDAD ACADÉMICA')}
+                ${renderDarkTh('PROPUESTA FORMATIVA')}
               </tr></thead>
               <tbody>
                 ${items.map((item) => {
                   const checked = previewSelection.has(String(item._key));
-                  return `<tr class="${checked ? '' : 'row-finalizada'}">
+                  const createdLabel = newsletterItemDayLabel(item);
+                  const tipoLabel = item.esCurso ? 'Curso' : (item.tipo || 'Carrera');
+                  const unitLabel = newsletterItemUnitLabel(item);
+                  return `<tr class="${checked ? '' : 'row-finalizada'}" style="${checked ? 'background:#f6fbff' : ''}">
                     <td style="text-align:center"><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleNewsletterPreviewItem('${esc(String(item._key))}', this.checked)" style="accent-color:var(--cy);width:15px;height:15px"></td>
-                    <td>${esc(item.nombre || '')}</td>
-                    <td style="text-align:center">${esc(item.esCurso ? 'Curso' : (item.tipo || 'Carrera'))}</td>
-                    <td style="text-align:center">${esc(item.modalidad || '—')}</td>
-                    <td style="text-align:center">${item.inscripcionFechaHasta ? esc(fmtD(item.inscripcionFechaHasta)) : '—'}</td>
+                    ${previewCell(createdLabel, { align: 'left', leftPadding: 10 })}
+                    ${previewCell(tipoLabel, { align: 'left', leftPadding: 10 })}
+                    ${previewCell(unitLabel, { align: 'left', leftPadding: 10 })}
+                    ${previewCell(item.nombre || '', { align: 'left', leftPadding: 10 })}
                   </tr>`;
                 }).join('')}
               </tbody>
@@ -416,21 +552,44 @@
       }).join('');
 
       return `<div class="tw" style="padding:14px;margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-          <div style="font-size:.92rem;font-weight:700;color:var(--tx)">Vista previa de envío manual (lunes 00:00 → ahora)</div>
-          <div class="tr2">
-            <button class="btn btn-ol btn-sm" onclick="newsletterPreviewSelectAll()">Seleccionar todo</button>
-            <button class="btn btn-ol btn-sm" onclick="newsletterPreviewClearSelection()">Quitar todo</button>
-            ${me.rol === 'root'
-              ? `<button id="nwl-send-btn" class="btn btn-cy" onclick="sendNewsletterDigestNow()" ${total === 0 ? 'disabled' : ''} style="font-weight:700">Enviar selección</button>`
-              : ''}
+        <div style="font-size:.95rem;font-weight:700;color:var(--tx);margin-bottom:10px">Novedades detectadas</div>
+        <div style="font-size:.78rem;color:var(--tx2);margin-bottom:10px">Período evaluado: lunes 00:00 (AR) a ahora.</div>
+        ${rowsBySection || '<div class="empty" style="padding:20px 0"><div class="ei">📭</div><p>Sin novedades para mostrar.</p></div>'}
+
+        <div class="tw" style="padding:12px;margin:10px 0;border:1px solid var(--bd);background:#fff">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+            <div style="font-size:.9rem;font-weight:700;color:var(--tx)">Selección</div>
+            <div class="tr2">
+              <button class="btn btn-ol btn-sm" style="min-width:132px;justify-content:center" onclick="newsletterPreviewSelectAll()">Seleccionar todo</button>
+              <button class="btn btn-ol btn-sm" style="min-width:132px;justify-content:center" onclick="newsletterPreviewClearSelection()">Limpiar selección</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
+            <div><div style="font-size:.72rem;color:var(--mt);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Detectadas</div><div style="font-size:.95rem;font-weight:700;color:var(--tx);margin-top:2px">${total}</div></div>
+            <div><div style="font-size:.72rem;color:var(--mt);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Seleccionadas</div><div style="font-size:.95rem;font-weight:700;color:var(--tx);margin-top:2px">${selected}</div></div>
+            <div><div style="font-size:.72rem;color:var(--mt);text-transform:uppercase;letter-spacing:.06em;font-weight:700">Excluidas</div><div style="font-size:.95rem;font-weight:700;color:var(--tx);margin-top:2px">${excluded}</div></div>
           </div>
         </div>
-        ${me.rol === 'root' ? renderRecipientPicker() : ''}
-        <div class="alr ${excluded > 0 ? 'alr-warn' : 'alr-info'}" style="margin-bottom:12px">
-          Se enviarán <strong>${selected}</strong> novedad(es) de <strong>${total}</strong>. Excluidas manualmente: <strong>${excluded}</strong>. Esta selección aplica solo al envío manual actual.
+
+        <div class="tw" style="padding:12px;border:1px solid var(--bd);background:#fff">
+          <div style="font-size:.9rem;font-weight:700;color:var(--tx);margin-bottom:8px">Acción de envío</div>
+          ${me.rol === 'root' ? renderRecipientPicker() : ''}
+          <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;flex-wrap:wrap">
+            ${me.rol === 'root'
+              ? `<button id="nwl-send-btn" class="btn btn-cy" onclick="sendNewsletterDigestNow()" ${canSend ? '' : 'disabled'} style="font-weight:700;min-width:132px;justify-content:center">Enviar</button>`
+              : ''}
+          </div>
+          <div id="nwl-send-progress" style="display:none;margin-top:10px;padding:14px 18px;background:var(--ev);border-radius:var(--r);border:1px solid var(--bd)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:9px">
+              <span style="font-size:.8rem;font-weight:600;color:var(--tx2)" id="nwl-sp-lbl">Preparando…</span>
+              <span style="font-size:.78rem;color:var(--mt)" id="nwl-sp-pct">0%</span>
+            </div>
+            <div style="height:7px;background:var(--bd);border-radius:4px;overflow:hidden">
+              <div id="nwl-sp-bar" style="height:100%;width:0%;background:var(--cy);border-radius:4px;transition:width .2s ease"></div>
+            </div>
+            <div id="nwl-sp-result" style="margin-top:8px;font-size:.8rem;color:var(--tx2)"></div>
+          </div>
         </div>
-        ${rowsBySection || '<div class="empty" style="padding:20px 0"><div class="ei">📭</div><p>No hay novedades aún para informar</p></div>'}
       </div>`;
     }
 
@@ -442,7 +601,7 @@
       const footer = `<div class="records-count">${recordsLabel}</div>`;
 
       if (!visible.length) {
-        return `<div class="empty"><div class="ei">📭</div><p>Sin suscriptores para los filtros seleccionados.</p></div>${footer}`;
+        return `<div class="empty"><div class="ei">📭</div><p>No hay suscriptores para los filtros seleccionados.</p><p style="font-size:.82rem;color:var(--tx2);margin-top:8px">Probá limpiar filtros o agregar contactos desde Data Exchange.</p></div>${footer}`;
       }
 
       return `<div class="tw" style="font-size:.85rem"><table style="width:100%;table-layout:fixed">
@@ -455,12 +614,12 @@
           <col style="width:12%">
         </colgroup>
         <thead><tr>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">${sortHead('CORREO ELECTRÓNICO', 'email')}</th>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">${sortHead('ORIGEN', 'origen')}</th>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">${sortHead('ESTADO', 'estado')}</th>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">${sortHead('FECHA ALTA', 'fechaAlta')}</th>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">${sortHead('ÚLTIMO ENVÍO', 'ultimoEnvio')}</th>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">ACCIONES</th>
+          ${renderDarkTh(sortHead('CORREO ELECTRÓNICO', 'email'))}
+          ${renderDarkTh(sortHead('ORIGEN', 'origen'))}
+          ${renderDarkTh(sortHead('ESTADO', 'estado'))}
+          ${renderDarkTh(sortHead('FECHA ALTA', 'fechaAlta'))}
+          ${renderDarkTh(sortHead('ÚLTIMO ENVÍO', 'ultimoEnvio'))}
+          ${renderDarkTh('ACCIONES')}
         </tr></thead>
         <tbody>${visible.map((r) => `<tr class="${r.activo ? '' : 'row-finalizada'}">
           <td style="padding-left:24px">${esc(r.email)}</td>
@@ -486,7 +645,7 @@
       const footer = `<div class="records-count">${recordsLabel}</div>`;
 
       if (!visible.length) {
-        return `<div class="empty"><div class="ei">🧾</div><p>Sin registros de envíos para los filtros seleccionados.</p></div>${footer}`;
+        return `<div class="empty"><div class="ei">🧾</div><p>No hay registros de envío para los filtros seleccionados.</p><p style="font-size:.82rem;color:var(--tx2);margin-top:8px">Cuando se ejecute un envío, el historial quedará disponible aquí.</p></div>${footer}`;
       }
 
       return `<div class="tw" style="font-size:.85rem"><table style="width:100%;table-layout:fixed">
@@ -500,13 +659,13 @@
           <col style="width:14%">
         </colgroup>
         <thead><tr>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">${sortLogHead('Timestamp', 'runAt')}</th>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">${sortLogHead('TIPO', 'dispatchType')}</th>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">${sortLogHead('ESTADO', 'status')}</th>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">${sortLogHead('DESTINATARIOS', 'recipientsTotal')}</th>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">${sortLogHead('ENVIADOS', 'sentCount')}</th>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">${sortLogHead('FALLIDOS', 'failCount')}</th>
-          <th style="text-align:center;font-size:10px;font-weight:700;color:rgba(255,255,255,.85);background:#161f2e;border-bottom:1px solid rgba(255,255,255,.12);text-transform:uppercase;letter-spacing:.04em">DETALLE</th>
+          ${renderDarkTh(sortLogHead('Timestamp', 'runAt'))}
+          ${renderDarkTh(sortLogHead('TIPO', 'dispatchType'))}
+          ${renderDarkTh(sortLogHead('ESTADO', 'status'))}
+          ${renderDarkTh(sortLogHead('DESTINATARIOS', 'recipientsTotal'))}
+          ${renderDarkTh(sortLogHead('ENVIADOS', 'sentCount'))}
+          ${renderDarkTh(sortLogHead('FALLIDOS', 'failCount'))}
+          ${renderDarkTh('DETALLE')}
         </tr></thead>
         <tbody>${visible.map((r) => `<tr>
           <td style="text-align:left;padding-left:18px">${esc(fmtTimestamp(r.runAt))}</td>
@@ -531,7 +690,7 @@
     function renderLogDetailView() {
       const detail = activeLogDetail;
       if (!detail) {
-        return '<div class="empty"><div class="ei">⚠️</div><p>No se encontró el detalle del envío.</p></div>';
+        return '<div class="empty"><div class="ei">⚠️</div><p>No se encontró el detalle de este envío.</p><p style="font-size:.82rem;color:var(--tx2);margin-top:8px">Volvé al listado y reintentá desde el registro correspondiente.</p></div>';
       }
       const rows = detailRecipientRows();
       const pageSizeDetail = 10;
@@ -550,10 +709,10 @@
               <col style="width:15%">
             </colgroup>
             <thead><tr>
-              <th style="text-align:center">CORREO</th>
-              <th style="text-align:center">TIMESTAMP ENVÍO</th>
-              <th style="text-align:center">NOTICIAS</th>
-              <th style="text-align:center">ESTADO</th>
+              ${renderDarkTh('CORREO')}
+              ${renderDarkTh('TIMESTAMP ENVÍO')}
+              ${renderDarkTh('NOTICIAS')}
+              ${renderDarkTh('ESTADO')}
             </tr></thead>
             <tbody>${visible.map((row) => `<tr>
               <td style="padding-left:24px">${esc(row.email || '')}</td>
@@ -562,7 +721,7 @@
               <td style="text-align:center">${esc(row.status || '—')}</td>
             </tr>`).join('')}</tbody>
           </table></div>${renderPagination(rows.length, currentPage, String(pageSizeDetail), 'setNewsletterDetailRecipientPage')}`
-        : '<div class="empty"><div class="ei">📭</div><p>No hay destinatarios para este filtro.</p></div>';
+        : '<div class="empty"><div class="ei">📭</div><p>No hay destinatarios para este filtro.</p><p style="font-size:.82rem;color:var(--tx2);margin-top:8px">Ajustá la búsqueda para ver más resultados.</p></div>';
 
       return `
         <div class="tb" style="margin-bottom:10px">
@@ -797,33 +956,12 @@
       }
 
       const summary = cache.summary || {};
-      const digest = cache.digest || {};
-      const logsSummary = cache.logsSummary || {};
       const showOverview = activeView === 'overview';
       const showSubscribers = activeView === 'subscribers';
       const showSends = activeView === 'sends';
       const showData = activeView === 'data';
 
-      const weeklyLine = dispatchSummaryLine('Último envío semanal', summary.lastWeeklyDispatch || null);
-      const manualLine = dispatchSummaryLine('Último envío manual', summary.lastManualDispatch || null);
-      const onlyOverviewInfo = showOverview
-        ? `<div class="tw" style="padding:14px;margin-bottom:14px">
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px">
-              <div style="border:1px solid var(--bd);border-radius:10px;padding:10px 12px;background:#fff">
-                <div style="font-size:.72rem;color:var(--mt);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">Newsletter Semanal</div>
-                <div style="font-size:.9rem;color:var(--tx);line-height:1.45">${esc(weeklyLine)}</div>
-              </div>
-              <div style="border:1px solid var(--bd);border-radius:10px;padding:10px 12px;background:#fff">
-                <div style="font-size:.72rem;color:var(--mt);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">Newsletter Manual</div>
-                <div style="font-size:.9rem;color:var(--tx);line-height:1.45">${esc(manualLine)}</div>
-              </div>
-            </div>
-          </div>`
-        : '';
-
       ct.innerHTML = `
-        ${showOverview ? renderSummaryCards(summary, logsSummary) : ''}
-        ${onlyOverviewInfo}
         ${showOverview ? `<div id="nwl-preview-panel-wrap">${renderPreviewPanel(me)}</div>` : ''}
         ${showSubscribers ? renderSubscribersSection() : ''}
         ${showSends ? renderDispatchSection() : ''}
@@ -900,10 +1038,7 @@
         logDetailRecipientPage = 1;
         rnwl('sends');
       });
-      document.getElementById('nwl-recipient-search')?.addEventListener('input', (e) => {
-        recipientSearch = e.target.value || '';
-        rerenderPreviewPanel();
-      });
+      bindOverviewInteractiveEvents();
     }
 
     function setNewsletterPage(nextPage) {
@@ -921,13 +1056,28 @@
       rnwl('sends');
     }
 
-    function rerenderPreviewPanel() {
+    function rerenderPreviewPanel(options = {}) {
       if (activeView !== 'overview') return;
       const ct = document.getElementById('ct');
       const me = getMe();
       if (!ct || !me) return;
       const panel = ct.querySelector('#nwl-preview-panel-wrap');
-      if (panel) panel.innerHTML = renderPreviewPanel(me);
+      if (panel) {
+        panel.innerHTML = renderPreviewPanel(me);
+        bindOverviewInteractiveEvents();
+        if (options.focusRecipientSearch) {
+          const input = document.getElementById('nwl-recipient-search');
+          if (input) {
+            input.focus();
+            if (
+              Number.isFinite(options.selectionStart)
+              && Number.isFinite(options.selectionEnd)
+            ) {
+              input.setSelectionRange(options.selectionStart, options.selectionEnd);
+            }
+          }
+        }
+      }
       else rnwl('overview');
     }
 
@@ -1132,33 +1282,55 @@
       const me = getMe();
       if (me?.rol !== 'root') return;
       const selectedKeys = [...previewSelection];
-      const selectedCount = selectedKeys.length;
       const selectedEmails = recipientMode === 'custom'
         ? [...recipientSelection].map((email) => normalizeEmail(email)).filter(Boolean)
-        : [];
-      const total = Number(cache.preview?.diff?.total || 0);
-      const excluded = Math.max(0, total - selectedCount);
-      if (selectedCount <= 0) {
-        toast('No hay novedades aún para informar', 'info');
+        : null;
+      const payload = {
+        selectedKeys,
+        recipientMode: recipientMode === 'custom' ? 'custom' : 'all',
+      };
+      if (Array.isArray(selectedEmails)) payload.selectedEmails = selectedEmails;
+      const ctx = getManualSendContext();
+      if (!ctx.canSend) {
+        toast(ctx.blockedReason || 'No se puede ejecutar el envío manual en este estado.', 'info');
         return;
       }
-      if (recipientMode === 'custom' && selectedEmails.length <= 0) {
-        toast('Seleccioná al menos un correo suscripto para el envío manual.', 'info');
-        return;
-      }
-      const targetLabel = recipientMode === 'custom'
-        ? `Destinatarios seleccionados: ${selectedEmails.length}.`
-        : 'Destinatarios: todos los suscriptores activos.';
-      const confirmMsg = `¿Enviar manualmente ${selectedCount} novedad(es)?\n\n${targetLabel}\nNovedades excluidas en esta ejecución: ${excluded}.\nEste filtro no afecta al envío automático.`;
-      if (!confirm(confirmMsg)) return;
-
       const btn = document.getElementById('nwl-send-btn');
       if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+      setSendProgressState({
+        visible: true,
+        pct: 8,
+        label: 'Preparando envío...',
+        color: 'var(--cy)',
+        result: '',
+        resultTone: 'var(--tx2)',
+      });
+
+      let progressPct = 8;
+      const progressTimer = setInterval(() => {
+        progressPct = Math.min(progressPct + 7, 82);
+        let label = 'Preparando envío...';
+        if (progressPct >= 25 && progressPct < 55) label = 'Validando selección...';
+        if (progressPct >= 55) label = 'Enviando novedades...';
+        setSendProgressState({
+          visible: true,
+          pct: progressPct,
+          label,
+          color: 'var(--cy)',
+        });
+      }, 220);
 
       try {
         const result = await callApi('/newsletter/send', {
           method: 'POST',
-          body: JSON.stringify({ selectedKeys, selectedEmails }),
+          body: JSON.stringify(payload),
+        });
+        clearInterval(progressTimer);
+        setSendProgressState({
+          visible: true,
+          pct: 100,
+          label: 'Envío completado',
+          color: 'var(--gr)',
         });
         const sections = result.secciones || result.sections || {};
         const diffTotal = Number(result?.diff?.total ?? result?.diffTotal ?? 0);
@@ -1174,15 +1346,32 @@
           sections.actualizadas && `${sections.actualizadas} actualizada(s)`,
         ].filter(Boolean);
         const changesLabel = parts.length ? `Secciones: ${parts.join(', ')}.` : 'Secciones: sin cambios.';
-        const summaryLabel = `Resultado: enviados ${sentCount}, fallidos ${failCount}, destinatarios ${recipientsTotal}, diff.total ${diffTotal}.`;
+        const summaryLabel = `Resultado del envío manual: enviados ${sentCount}, fallidos ${failCount}, destinatarios ${recipientsTotal}, novedades ${diffTotal}.`;
+        setSendProgressState({
+          visible: true,
+          pct: 100,
+          label: 'Envío completado',
+          color: failCount > 0 ? 'var(--or)' : 'var(--gr)',
+          result: `Envío ${failCount > 0 ? 'finalizado con incidencias' : 'exitoso'}: enviados ${sentCount}, fallidos ${failCount}.`,
+          resultTone: failCount > 0 ? 'var(--or)' : 'var(--gr)',
+        });
         toast(`${summaryLabel} ${changesLabel}`, sentCount > 0 ? 'success' : 'info');
         previewSelection = new Set();
         await rnwl('overview');
       } catch (e) {
+        clearInterval(progressTimer);
         const msg = String(e?.message || 'Error al enviar el digest.');
         if (msg.toLowerCase().includes('no hay novedades')) toast(msg, 'info');
         else toast(msg, 'error');
-        if (btn) { btn.disabled = false; btn.textContent = 'Enviar selección'; }
+        setSendProgressState({
+          visible: true,
+          pct: 100,
+          label: 'Error en el envío',
+          color: 'var(--rd)',
+          result: msg,
+          resultTone: 'var(--rd)',
+        });
+        if (btn) { btn.disabled = false; btn.textContent = 'Enviar'; }
       }
     }
 

@@ -327,6 +327,14 @@ function buildCarrerasSnapshotEntries() {
       nombre: String(c.nombre || ''),
       tipo: String(c.tipo || ''),
       esCurso: !!c.esCurso,
+      unidadAcademica: String(
+        (Array.isArray(c.unidadesAcademicas) && c.unidadesAcademicas[0])
+          || c.unidadAcademica
+          || ''
+      ).trim() || null,
+      unidadesAcademicas: Array.isArray(c.unidadesAcademicas)
+        ? c.unidadesAcademicas.map((u) => String(u || '').trim()).filter(Boolean)
+        : [],
       activo: typeof c.activo === 'object' ? !!c.activo?.valor : c.activo !== false,
       inscripcionAbierta: isActiveState(inscObj),
       inscripcionFechaHasta: inscObj.fechaHasta || null,
@@ -1162,8 +1170,17 @@ async function sendManualNewsletterDigest(options = {}) {
     const snapshot = buildNewsletterDigestSnapshot();
     const lastCarreras = Array.isArray(cfg.lastCarrerasSnapshot) ? cfg.lastCarrerasSnapshot : null;
     const activeRecipients = (db.newsletterSubscriptions || []).filter((s) => s && s.activo !== false && isValidEmail(s.email));
-    const selectedEmails = Array.isArray(options?.selectedEmails)
-      ? new Set(options.selectedEmails.map((email) => String(email || '').trim().toLowerCase()).filter(Boolean))
+    const selectedEmailsList = Array.isArray(options?.selectedEmails)
+      ? options.selectedEmails.map((email) => String(email || '').trim().toLowerCase()).filter(Boolean)
+      : null;
+    const recipientModeRaw = String(options?.recipientMode || '').trim().toLowerCase();
+    const recipientMode = recipientModeRaw === 'custom'
+      ? 'custom'
+      : ((recipientModeRaw === 'all')
+        ? 'all'
+        : ((selectedEmailsList && selectedEmailsList.length) ? 'custom' : 'all'));
+    const selectedEmails = (recipientMode === 'custom' && Array.isArray(selectedEmailsList))
+      ? new Set(selectedEmailsList)
       : null;
     const recipients = selectedEmails
       ? activeRecipients.filter((s) => selectedEmails.has(String(s.email || '').trim().toLowerCase()))
@@ -1206,7 +1223,7 @@ async function sendManualNewsletterDigest(options = {}) {
       };
     } else if (recipientsTotal === 0) {
       status = 'manual-sin-destinatarios';
-      message = selectedEmails
+      message = recipientMode === 'custom'
         ? `Envío manual: ${selectedDiff.total} propuesta(s) (${diffSummary}). Sin destinatarios válidos en la selección manual.`
         : `Envío manual: ${selectedDiff.total} propuesta(s) (${diffSummary}). Sin suscriptores activos.`;
     } else if (hasNewsletterMailConfig()) {

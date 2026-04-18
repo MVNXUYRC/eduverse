@@ -282,6 +282,15 @@ ul { list-style: none; }
   mask-image: radial-gradient(ellipse at center, black 18%, transparent 74%);
 }
 .hero-content { max-width: 780px; text-align: center; position: relative; z-index: 1; }
+.hero-institution {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--unam-cyan);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 24px;
+  animation: fadeInDown 0.5s ease both;
+}
 .hero-badge {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 5px 14px;

@@ -363,7 +363,7 @@ function heroHTML() {
   return `
   <section class="hero">
     <div class="hero-content">
-      <div class="hero-badge"><span class="hero-badge-dot"></span>Universidad Nacional de Misiones</div>
+      <div class="hero-institution">Universidad Nacional de Misiones</div>
       <h1 class="hero-title">Educación a <span class="highlight">Distancia</span></h1>
       <p class="hero-subtitle">Encontrá propuestas de forma simple y rápida, y empezá a explorar tus intereses para descubrir todas las oportunidades que te esperan..</p>
       <div class="search-wrapper">

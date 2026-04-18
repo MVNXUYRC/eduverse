@@ -1911,11 +1911,20 @@ async function handleManualNewsletterSend(req, body = {}) {
   const selectedKeys = Array.isArray(body?.selectedKeys)
     ? body.selectedKeys.map((key) => String(key || '').trim()).filter(Boolean)
     : [];
-  const selectedEmails = Array.isArray(body?.selectedEmails)
+  const recipientModeRaw = String(body?.recipientMode || '').trim().toLowerCase();
+  const selectedEmailsRaw = Array.isArray(body?.selectedEmails)
     ? body.selectedEmails.map((email) => String(email || '').trim().toLowerCase()).filter(Boolean)
     : null;
+  const recipientMode = recipientModeRaw === 'custom'
+    ? 'custom'
+    : ((recipientModeRaw === 'all')
+      ? 'all'
+      : ((selectedEmailsRaw && selectedEmailsRaw.length) ? 'custom' : 'all'));
+  const selectedEmails = recipientMode === 'custom'
+    ? (selectedEmailsRaw && selectedEmailsRaw.length ? selectedEmailsRaw : [])
+    : null;
   try {
-    const result = await _sendManualDigest({ selectedKeys, selectedEmails });
+    const result = await _sendManualDigest({ selectedKeys, selectedEmails, recipientMode });
     if (result?.blocked === true) {
       return {
         status: 409,
